@@ -1,0 +1,13 @@
+name = "NumericalContinuation"
+uuid = "b2191620-d855-47d0-a74b-6b38b372fe05"
+authors = ["David AW Barton"]
+version = "0.1.0"
+
+[compat]
+julia = "1.8"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
