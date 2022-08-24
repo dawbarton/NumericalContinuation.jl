@@ -3,6 +3,10 @@ uuid = "b2191620-d855-47d0-a74b-6b38b372fe05"
 authors = ["David AW Barton"]
 version = "0.1.0"
 
+[deps]
+ComponentArrays = "b0b7db55-cfe3-40fc-9ded-d10e2dbeff66"
+DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+
 [compat]
 julia = "1.8"
 
