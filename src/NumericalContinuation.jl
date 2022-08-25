@@ -6,6 +6,7 @@ using DocStringExtensions
 const RESERVED_NAMES = Set([:zero])
 
 include("continuation_problem.jl")
+include("algebraic_problems.jl")
 
 function test()
     a = ContinuationProblem(sin, monitor=[:a=>identity, :b=>identity])
