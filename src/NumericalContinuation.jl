@@ -2,6 +2,8 @@ module NumericalContinuation
 
 using DocStringExtensions
 
+const RESERVED_NAMES = Set([:zero])
+
 abstract type AbstractContinuationProblem end
 
 """
@@ -20,8 +22,37 @@ struct ContinuationProblem <: AbstractContinuationProblem
     sub_problem_names::Vector{Symbol}
 end
 
-function ContinuationProblem(zero_function)
-    ContinuationProblem(zero_function, [], Symbol[], [], Symbol[])
+function ContinuationProblem(zero_function; monitor = [], sub = [])
+    monitor_function = []
+    monitor_function_names = Symbol[]
+    for m in monitor
+        if !(m isa Pair)
+            throw(ArgumentError("Monitor functions must be specified in the form `[:name => monitor_function]`"))
+        else
+            if !(m[1] isa Symbol)
+                throw(ArgumentError("Names must be specified as symbols, e.g., `:name`"))
+            else
+                push!(monitor_function_names, m[1])
+                push!(monitor_function, m[2])
+            end
+        end
+    end
+    sub_problem = []
+    sub_problem_names = Symbol[]
+    for p in sub
+        if !(p isa Pair)
+            throw(ArgumentError("Subproblems must be specified in the form `[:name => sub_problem]`"))
+        else
+            if !(p[1] isa Symbol)
+                throw(ArgumentError("Names must be specified as symbols, e.g., `:name`"))
+            else
+                push!(sub_problem_names, p[1])
+                push!(sub_problem, p[2])
+            end
+        end
+    end
+    return ContinuationProblem(zero_function, monitor_function, monitor_function_names,
+                               sub_problem, sub_problem_names)
 end
 
 """
@@ -64,9 +95,6 @@ function _sub_problem_names!(names::Vector{Symbol}, prob::ContinuationProblem,
     for i in eachindex(prob.sub_problem, prob.sub_problem_names)
         name = prob.sub_problem_names[i]
         _sub_problem_names!(names, prob.sub_problem[i], Symbol(prefix, name, :.))
-    end
-    for i in eachindex(prob.sub_problem, prob.sub_problem_names)
-        name = prob.sub_problem_names[i]
         push!(names, Symbol(prefix, name))
     end
     return names
@@ -126,7 +154,6 @@ function close_problem(prob::ContinuationProblem)
     return ClosedProblem(prob.zero_function, prob.monitor_function,
                          prob.monitor_function_names, sub_problem, prob.sub_problem_names)
 end
-close_problem(prob::ClosedProblem) = prob
 
 """
     $TYPEDEF
@@ -153,17 +180,20 @@ struct ClosedProblem{Z, M, MNAME, P, PNAME} <: AbstractContinuationProblem
             throw(ArgumentError("All subproblems of a closed problem must also be closed"))
         end
         _check_names([monitor_function_names; sub_problem_names])  # check for duplicates and reserved names
-        ClosedProblem{typeof(zero_function), Tuple{(typeof.(monitor_function))...},
-                      Tuple{monitor_function_names...}, Tuple{(typeof.(sub_problem))...},
-                      Tuple{sub_problem_names...}}(zero_function, (monitor_function...,),
-                                                   (sub_problem...,))
+        return new{typeof(zero_function), Tuple{(typeof.(monitor_function))...},
+                   Tuple{monitor_function_names...}, Tuple{(typeof.(sub_problem))...},
+                   Tuple{sub_problem_names...}}(zero_function, (monitor_function...,),
+                                                (sub_problem...,))
     end
 end
 
 ClosedProblem(prob::ContinuationProblem) = close_problem(prob)
+close_problem(prob::ClosedProblem) = prob
 
 @generated function zero_function(prob::ClosedProblem, u, data)
-    return :(ComponentVector($(_gen_zero_function(prob, :prob, :u, :data))))
+    result = :([])
+    _gen_zero_function!(result.args, prob, :prob, :u, :data)
+    return :(reduce(hcat, $result))
 end
 
 """
@@ -172,36 +202,29 @@ end
 INTERNAL ONLY
 
 Generate an expression tree to call `zero_function` on a `ClosedProblem` and its
-subproblems, returning a tuple. This function should be called from an `@generated`
+subproblems, returning a vector. This function should be called from an `@generated`
 function. `prob`, `u`, and `data` are the names of the corresponding parameters in the
 generated function given as a `Symbol` or `Expr`.
 """
-function _gen_zero_function(::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
-                            prob, u, data) where {Z, M, MNAME, P, PNAME}
-    tpl = :(())
+function _gen_zero_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
+                             prob, u, data) where {Z, M, MNAME, P, PNAME}
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
-        prob_tpl = _gen_zero_function(P.parameters[i], :($prob.sub_problem[i]),
-                                      :($u.$name),
-                                      :($data.$name))
-        if prob_tpl != :(())
-            push!(tpl.args, :($name = $prob_tpl))
-        end
+        _gen_zero_function!(result, P.parameters[i], :($prob.sub_problem[$i]), :($u.$name),
+                            :($data.$name))
     end
     if Z !== Nothing
-        push!(tpl.args,
-              :(zero = zero_function($prob.zero_function, $u.zero, $data.zero;
-                                     parent = ($u, $data))))
+        push!(result,
+              :(zero_function($prob.zero_function, $u.zero, $data.zero;
+                              parent = ($u, $data))))
     end
-    return tpl
-end
-
-function monitor_function(prob::ContinuationProblem, u, data)
-    throw(ArgumentError("Must use close_problem first"))
+    return result
 end
 
 @generated function monitor_function(prob::ClosedProblem, u, data)
-    return :(ComponentVector($(_gen_monitor_function(prob, :prob, :u, :data))))
+    result = :([])
+    _gen_monitor_function!(result.args, prob, :prob, :u, :data)
+    return result
 end
 
 """
@@ -210,29 +233,24 @@ end
 INTERNAL ONLY
 
 Generate an expression tree to call `monitor_function` on a `ClosedProblem` and its
-subproblems, returning a tuple. This function should be called from an `@generated`
+subproblems, returning a vector. This function should be called from an `@generated`
 function. `prob`, `u`, and `data` are the names of the corresponding parameters in the
 generated function given as a `Symbol` or `Expr`.
 """
-function _gen_monitor_function(::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
-                               prob, u, data) where {Z, M, MNAME, P, PNAME}
-    tpl = :(())
+function _gen_monitor_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
+                                prob, u, data) where {Z, M, MNAME, P, PNAME}
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
-        prob_tpl = _gen_monitor_function(P.parameters[i], :($prob.sub_problem[i]),
-                                         :($u.$name),
-                                         :($data.$name))
-        if prob_tpl != :(())
-            push!(tpl.args, :($name = $prob_tpl))
-        end
+        _gen_monitor_function!(result, P.parameters[i], :($prob.sub_problem[$i]),
+                               :($u.$name), :($data.$name))
     end
     for i in Base.OneTo(length(M.parameters))
         name = MNAME.parameters[i]
-        push!(tpl.args,
-              :($name = monitor_function($prob.monitor_function[i], $u.zero, $data.$name;
-                                         parent = ($u, $data))))
+        push!(result,
+              :(monitor_function($prob.monitor_function[$i], $u.zero, $data.$name;
+                                 parent = ($u, $data))))
     end
-    return tpl
+    return result
 end
 
 function monitor_function_names(prob::ClosedProblem)
@@ -242,7 +260,7 @@ end
 function _monitor_function_names!(names::Vector{Symbol},
                                   ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
                                   prefix) where {Z, M, MNAME, P, PNAME}
-    # Must match the ordering of _gen_monitor_function
+    # Must match the ordering of _gen_monitor_function!
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
         _monitor_function_names!(names, P.parameters[i], Symbol(prefix, name, :.))
@@ -254,13 +272,25 @@ function _monitor_function_names!(names::Vector{Symbol},
     return names
 end
 
+function sub_problem_names(prob::ClosedProblem)
+    return _sub_problem_names!(Symbol[], typeof(prob), Symbol())
+end
+
+function _sub_problem_names!(names::Vector{Symbol},
+                                  ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
+                                  prefix) where {Z, M, MNAME, P, PNAME}
+    # Must match the ordering of _gen_sub_problem!
+    for i in Base.OneTo(length(P.parameters))
+        name = PNAME.parameters[i]
+        _sub_problem_names!(names, P.parameters[i], Symbol(prefix, name, :.))
+        push!(names, Symbol(prefix, name))
+    end
+    return names
+end
+
 function test()
-    a = ClosedProblem{typeof(sin), Nothing, Nothing, Tuple{}, Tuple{}}(sin, nothing,
-                                                                       ())
-    b = ClosedProblem{typeof(cos), Nothing, Nothing, Tuple{typeof(a)}, Tuple{:sinprob
-                                                                             }}(cos,
-                                                                                nothing,
-                                                                                (a,))
+    a = ContinuationProblem(sin, monitor=[:a=>identity, :b=>identity])
+    return ContinuationProblem(cos, sub = [:sin => a])
 end
 
 # prob = zero_problem(u -> [u.x^2 + u.y^2 - 1]; u0=ComponentArray(x=1.0, y=0.0))
