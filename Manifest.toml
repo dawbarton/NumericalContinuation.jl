@@ -2,7 +2,7 @@
 
 julia_version = "1.8.0"
 manifest_format = "2.0"
-project_hash = "1caca001d454173593f861b63a55f0c508f0c497"
+project_hash = "b6b00c0ee3c44f1f2d35e46e52c21518c7a23a62"
 
 [[deps.ArrayInterface]]
 deps = ["ArrayInterfaceCore", "Compat", "IfElse", "LinearAlgebra", "Static"]
