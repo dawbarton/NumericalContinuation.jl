@@ -233,7 +233,7 @@ end
 ClosedProblem(prob::ContinuationProblem) = close_problem(prob)
 close_problem(prob::ClosedProblem) = prob
 
-@generated function zero_function(prob::ClosedProblem, u, data)
+@generated function eval_zero_function(prob::ClosedProblem, u, data)
     result = :([])
     _gen_zero_function!(result.args, prob, :prob, :u, :data)
     return :(reduce(hcat, $result))
@@ -258,13 +258,13 @@ function _gen_zero_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}
     end
     if Z !== Nothing
         push!(result,
-              :(zero_function($prob.zero_function, $u.zero, $data.zero;
-                              parent = ($u, $data))))
+              :(eval_zero_function($prob.zero_function, $u.zero, $data.zero;
+                                   parent = ($u, $data))))
     end
     return result
 end
 
-@generated function monitor_function(prob::ClosedProblem, u, data)
+@generated function eval_monitor_function(prob::ClosedProblem, u, data)
     result = :([])
     _gen_monitor_function!(result.args, prob, :prob, :u, :data)
     return result
@@ -290,8 +290,8 @@ function _gen_monitor_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNA
     for i in Base.OneTo(length(M.parameters))
         name = MNAME.parameters[i]
         push!(result,
-              :(monitor_function($prob.monitor_function[$i], $u.zero, $data.$name;
-                                 parent = ($u, $data))))
+              :(eval_monitor_function($prob.monitor_function[$i], $u.zero, $data.$name;
+                                      parent = ($u, $data))))
     end
     return result
 end
@@ -347,11 +347,12 @@ function ContinuationParameter(name, idx; base::Union{Nothing, Symbol} = nothing
     ContinuationParameter{base}(name, idx)
 end
 
-function monitor_function(cpar::ContinuationParameter{nothing}, u, data; parent)
+function eval_monitor_function(cpar::ContinuationParameter{nothing}, u, data; parent)
     return u[cpar.idx]
 end
 
-function monitor_function(cpar::ContinuationParameter{BASE}, u, data; parent) where {BASE}
+function eval_monitor_function(cpar::ContinuationParameter{BASE}, u, data;
+                               parent) where {BASE}
     return u[Val(BASE)][cpar.idx]  # Constant propagation appears to work
 end
 
