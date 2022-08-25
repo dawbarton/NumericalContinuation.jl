@@ -338,14 +338,21 @@ Create a continuation parameter for use as a monitor function.
 
 Also see: [`add_parameter!`](@ref)
 """
-struct ContinuationParameter
+struct ContinuationParameter{BASE}
     name::Symbol
     idx::Int
 end
 
-function monitor_function(cpar::ContinuationParameter, u, data; parent)
-    # TODO: relax the constraint that parameters must be in the field p?
-    return u.p[cpar.idx]
+function ContinuationParameter(name, idx; base::Union{Nothing, Symbol} = nothing)
+    ContinuationParameter{base}(name, idx)
+end
+
+function monitor_function(cpar::ContinuationParameter{nothing}, u, data; parent)
+    return u[cpar.idx]
+end
+
+function monitor_function(cpar::ContinuationParameter{BASE}, u, data; parent) where {BASE}
+    return u[Val(BASE)][cpar.idx]  # Constant propagation appears to work
 end
 
 """
@@ -357,22 +364,22 @@ the vector.
 """
 function add_parameter! end
 
-function add_parameter!(prob::ContinuationProblem, name::Symbol, idx)
-    add_monitor_function!(prob, name, ContinuationParameter(name, idx))
+function add_parameter!(prob::ContinuationProblem, name::Symbol, idx; kwargs...)
+    add_monitor_function!(prob, name, ContinuationParameter(name, idx; kwargs...))
 end
 
-function add_parameter!(prob::ContinuationProblem, named_idx::Pair{Symbol})
-    add_parameter!(prob, named_idx[1], named_idx[2])
+function add_parameter!(prob::ContinuationProblem, named_idx::Pair{Symbol}; kwargs...)
+    add_parameter!(prob, named_idx[1], named_idx[2]; kwargs...)
 end
 
-function add_parameter!(prob::ContinuationProblem, names)
+function add_parameter!(prob::ContinuationProblem, names; kwargs...)
     for (i, name) in enumerate(names)
         if name isa Symbol
-            add_parameter!(prob, name, i)
+            add_parameter!(prob, name, i; kwargs...)
         elseif name isa Integer
-            add_parameter!(prob, Symbol(:p, name), name)
+            add_parameter!(prob, Symbol(:p, name), name; kwargs...)
         elseif name isa Pair{Symbol}
-            add_parameter!(prob, name)
+            add_parameter!(prob, name; kwargs...)
         else
             throw(ArgumentError("Parameters should be specified in the form `[:name=>index]`"))
         end
