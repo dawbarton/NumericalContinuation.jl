@@ -266,9 +266,7 @@ function _gen_zero_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}
                             :($data.$name))
     end
     if Z !== Nothing
-        push!(result,
-              :(eval_zero_function($prob.zero_function, $u.zero, $data.zero;
-                                   parent = ($u, $data))))
+        push!(result, :($prob.zero_function($u.zero, $data.zero; parent = ($u, $data))))
     end
     return result
 end
@@ -299,8 +297,7 @@ function _gen_monitor_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNA
     for i in Base.OneTo(length(M.parameters))
         name = MNAME.parameters[i]
         push!(result,
-              :(eval_monitor_function($prob.monitor_function[$i], $u.zero, $data.$name;
-                                      parent = ($u, $data))))
+              :($prob.monitor_function[$i]($u.zero, $data.$name; parent = ($u, $data))))
     end
     return result
 end
@@ -316,17 +313,17 @@ function _get_initial_data(prob::AbstractContinuationProblem)
     for i in eachindex(prob.sub_problem, prob.sub_problem_name)
         name = prob.sub_problem_name[i]
         (_u0, _data) = _get_initial_data(prob.sub_problem[i])
-        push!(u0, name=>_u0)
-        push!(data, name=>_data)
+        push!(u0, name => _u0)
+        push!(data, name => _data)
     end
     (_u0, _data) = get_initial_data(prob.zero_function)
-    push!(u0, name=>_u0)
-    push!(data, name=>_data)
+    push!(u0, name => _u0)
+    push!(data, name => _data)
     for i in eachindex(prob.monitor_function, prob.monitor_function_name)
         name = prob.monitor_function_name[i]
         # TODO: decide if monitor functions can introduce new state variables
         _data = get_initial_data(prob.monitor_function[i])
-        push!(data, name=>_data)
+        push!(data, name => _data)
     end
     return (NamedTuple(u0), NamedTuple(data))
 end
