@@ -1,5 +1,10 @@
-export ContinuationProblem, ClosedProblem, add_monitor_function!, add_sub_problem!,
-       monitor_function_names, sub_problem_names, add_parameter!
+# Types
+export ContinuationProblem, ClosedProblem
+# Functions
+export add_monitor_function!, add_sub_problem!, monitor_function_names, sub_problem_names,
+       add_parameter!
+# Re-exports
+export @optic, ComponentVector
 
 abstract type AbstractContinuationProblem end
 
@@ -105,12 +110,13 @@ Return the names of the monitor functions in the problem specified and its subpr
 """
 function monitor_function_names end
 
-function monitor_function_names(prob::ContinuationProblem)
+function monitor_function_names(prob::AbstractContinuationProblem)
     return _monitor_function_names!(Symbol[], prob, Symbol())
 end
 
-function _monitor_function_names!(names::Vector{Symbol}, prob::ContinuationProblem,
+function _monitor_function_names!(names::Vector{Symbol}, prob::AbstractContinuationProblem,
                                   prefix)
+    # Must match the ordering of _gen_monitor_function!
     for i in eachindex(prob.sub_problem, prob.sub_problem_names)
         name = prob.sub_problem_names[i]
         _monitor_function_names!(names, prob.sub_problem[i], Symbol(prefix, name, :.))
@@ -129,11 +135,11 @@ Return the names of the subproblems in the problem specified.
 """
 function sub_problem_names end
 
-function sub_problem_names(prob::ContinuationProblem)
+function sub_problem_names(prob::AbstractContinuationProblem)
     return _sub_problem_names!(Symbol[], prob, Symbol())
 end
 
-function _sub_problem_names!(names::Vector{Symbol}, prob::ContinuationProblem,
+function _sub_problem_names!(names::Vector{Symbol}, prob::AbstractContinuationProblem,
                              prefix)
     for i in eachindex(prob.sub_problem, prob.sub_problem_names)
         name = prob.sub_problem_names[i]
@@ -209,7 +215,9 @@ See [`close_problem`](@ref)
 struct ClosedProblem{Z, M, MNAME, P, PNAME} <: AbstractContinuationProblem
     zero_function::Z
     monitor_function::M
+    monitor_function_names::Vector{Symbol}
     sub_problem::P
+    sub_problem_names::Vector{Symbol}
 
     function ClosedProblem(zero_function, monitor_function, monitor_function_names,
                            sub_problem, sub_problem_names)
@@ -226,7 +234,8 @@ struct ClosedProblem{Z, M, MNAME, P, PNAME} <: AbstractContinuationProblem
         return new{typeof(zero_function), Tuple{(typeof.(monitor_function))...},
                    Tuple{monitor_function_names...}, Tuple{(typeof.(sub_problem))...},
                    Tuple{sub_problem_names...}}(zero_function, (monitor_function...,),
-                                                (sub_problem...,))
+                                                copy(monitor_function_names),
+                                                (sub_problem...,), copy(sub_problem_names))
     end
 end
 
@@ -296,68 +305,41 @@ function _gen_monitor_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNA
     return result
 end
 
-function monitor_function_names(prob::ClosedProblem)
-    return _monitor_function_names!(Symbol[], typeof(prob), Symbol())
+function get_initial_data(prob::Union{ContinuationProblem, ClosedProblem})
+    u0 = []
+    data = _get_initial_data!(u0, prob)
+    return (u0, data)
 end
 
-function _monitor_function_names!(names::Vector{Symbol},
-                                  ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
-                                  prefix) where {Z, M, MNAME, P, PNAME}
-    # Must match the ordering of _gen_monitor_function!
-    for i in Base.OneTo(length(P.parameters))
-        name = PNAME.parameters[i]
-        _monitor_function_names!(names, P.parameters[i], Symbol(prefix, name, :.))
-    end
-    for i in Base.OneTo(length(M.parameters))
-        name = MNAME.parameters[i]
-        push!(names, Symbol(prefix, name))
-    end
-    return names
-end
-
-function sub_problem_names(prob::ClosedProblem)
-    return _sub_problem_names!(Symbol[], typeof(prob), Symbol())
-end
-
-function _sub_problem_names!(names::Vector{Symbol},
-                             ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
-                             prefix) where {Z, M, MNAME, P, PNAME}
-    # Must match the ordering of _gen_sub_problem!
-    for i in Base.OneTo(length(P.parameters))
-        name = PNAME.parameters[i]
-        _sub_problem_names!(names, P.parameters[i], Symbol(prefix, name, :.))
-        push!(names, Symbol(prefix, name))
-    end
-    return names
+function _get_initial_data!(u0, prob::Union{ContinuationProblem, ClosedProblem})
+    data = []
 end
 
 """
-    $TYPEDEF
+    ContinuationParameter(name, lens)
 
-Create a continuation parameter for use as a monitor function.
+Create a continuation parameter for use as a monitor function. The reference to a parameter
+is stored as a lens (see Accessors.jl) meaning that arbitrary references are possible.
+
+# Example
+
+```julia
+ContinuationParameter(:mypar, @optic)
+```
 
 Also see: [`add_parameter!`](@ref)
 """
-struct ContinuationParameter{BASE}
+struct ContinuationParameter{L}
     name::Symbol
-    idx::Int
+    lens::L
 end
 
-function ContinuationParameter(name, idx; base::Union{Nothing, Symbol} = nothing)
-    ContinuationParameter{base}(name, idx)
-end
-
-function eval_monitor_function(cpar::ContinuationParameter{nothing}, u, data; parent)
-    return u[cpar.idx]
-end
-
-function eval_monitor_function(cpar::ContinuationParameter{BASE}, u, data;
-                               parent) where {BASE}
-    return u[Val(BASE)][cpar.idx]  # Constant propagation appears to work
+function eval_monitor_function(cpar::ContinuationParameter, u, data; parent)
+    return cpar.lens(u)
 end
 
 """
-    $SIGNATURES
+    $(SIGNATURES)
 
 Add a continuation parameter to a continuation problem. Parameters should be specified as
 `:name=>index` pairs; if only names are provided, the index is taken from the position in
@@ -365,22 +347,26 @@ the vector.
 """
 function add_parameter! end
 
-function add_parameter!(prob::ContinuationProblem, name::Symbol, idx; kwargs...)
-    add_monitor_function!(prob, name, ContinuationParameter(name, idx; kwargs...))
+function add_parameter!(prob::ContinuationProblem, name::Symbol, lens)
+    add_monitor_function!(prob, name, ContinuationParameter(name, lens))
 end
 
-function add_parameter!(prob::ContinuationProblem, named_idx::Pair{Symbol}; kwargs...)
-    add_parameter!(prob, named_idx[1], named_idx[2]; kwargs...)
+function add_parameter!(prob::ContinuationProblem, name::Symbol, idx::Integer)
+    add_parameter!(prob, name, @optic _[idx])
 end
 
-function add_parameter!(prob::ContinuationProblem, names; kwargs...)
+function add_parameter!(prob::ContinuationProblem, named_pair::Pair{Symbol})
+    add_parameter!(prob, named_pair[1], named_pair[2])
+end
+
+function add_parameter!(prob::ContinuationProblem, names)
     for (i, name) in enumerate(names)
         if name isa Symbol
-            add_parameter!(prob, name, i; kwargs...)
+            add_parameter!(prob, name, i)
         elseif name isa Integer
-            add_parameter!(prob, Symbol(:p, name), name; kwargs...)
+            add_parameter!(prob, Symbol(:p, name), name)
         elseif name isa Pair{Symbol}
-            add_parameter!(prob, name; kwargs...)
+            add_parameter!(prob, name)
         else
             throw(ArgumentError("Parameters should be specified in the form `[:name=>index]`"))
         end

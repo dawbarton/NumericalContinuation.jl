@@ -1,6 +1,7 @@
 module NumericalContinuation
 
 using ComponentArrays
+using Accessors
 using DocStringExtensions
 
 const RESERVED_NAMES = Set([:zero])
