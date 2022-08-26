@@ -305,15 +305,33 @@ function _gen_monitor_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNA
     return result
 end
 
-function get_initial_data(prob::Union{ContinuationProblem, ClosedProblem})
-    u0 = []
-    data = _get_initial_data!(u0, prob)
-    return (u0, data)
+function get_initial_data(prob::AbstractContinuationProblem)
+    (u0, data) = _get_initial_data(prob)
+    return (ComponentVector(u0), data)
 end
 
-function _get_initial_data!(u0, prob::Union{ContinuationProblem, ClosedProblem})
+function _get_initial_data(prob::AbstractContinuationProblem)
+    u0 = []
     data = []
+    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
+        name = prob.sub_problem_name[i]
+        (_u0, _data) = _get_initial_data(prob.sub_problem[i])
+        push!(u0, name=>_u0)
+        push!(data, name=>_data)
+    end
+    (_u0, _data) = get_initial_data(prob.zero_function)
+    push!(u0, name=>_u0)
+    push!(data, name=>_data)
+    for i in eachindex(prob.monitor_function, prob.monitor_function_name)
+        name = prob.monitor_function_name[i]
+        # TODO: decide if monitor functions can introduce new state variables
+        _data = get_initial_data(prob.monitor_function[i])
+        push!(data, name=>_data)
+    end
+    return (NamedTuple(u0), NamedTuple(data))
 end
+
+get_initial_data(monitor_function) = nothing  # fall back for monitor functions
 
 """
     ContinuationParameter(name, lens)
