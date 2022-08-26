@@ -1,7 +1,7 @@
 # Types
 export ContinuationProblem, ClosedProblem
 # Functions
-export add_monitor_function!, add_sub_problem!, monitor_function_names, sub_problem_names,
+export add_monitor_function!, add_sub_problem!, monitor_function_name, sub_problem_name,
        add_parameter!
 # Re-exports
 export @optic, ComponentVector
@@ -19,9 +19,9 @@ structure to form the overall problem definition.
 struct ContinuationProblem <: AbstractContinuationProblem
     zero_function::Any
     monitor_function::Vector{Any}
-    monitor_function_names::Vector{Symbol}
+    monitor_function_name::Vector{Symbol}
     sub_problem::Vector{Any}
-    sub_problem_names::Vector{Symbol}
+    sub_problem_name::Vector{Symbol}
 end
 
 function ContinuationProblem(zero_function; monitor = [], sub = [])
@@ -48,7 +48,7 @@ function add_monitor_function! end
 
 function add_monitor_function!(prob::ContinuationProblem, name::Symbol, mfunc)
     push!(prob.monitor_function, mfunc)
-    push!(prob.monitor_function_names, name)
+    push!(prob.monitor_function_name, name)
     return prob
 end
 
@@ -84,7 +84,7 @@ function add_sub_problem! end
 
 function add_sub_problem!(prob::ContinuationProblem, name::Symbol, sub_prob)
     push!(prob.sub_problem, sub_prob)
-    push!(prob.sub_problem_names, name)
+    push!(prob.sub_problem_name, name)
     return prob
 end
 
@@ -108,21 +108,21 @@ end
 
 Return the names of the monitor functions in the problem specified and its subproblems.
 """
-function monitor_function_names end
+function monitor_function_name end
 
-function monitor_function_names(prob::AbstractContinuationProblem)
+function monitor_function_name(prob::AbstractContinuationProblem)
     return _monitor_function_names!(Symbol[], prob, Symbol())
 end
 
 function _monitor_function_names!(names::Vector{Symbol}, prob::AbstractContinuationProblem,
                                   prefix)
     # Must match the ordering of _gen_monitor_function!
-    for i in eachindex(prob.sub_problem, prob.sub_problem_names)
-        name = prob.sub_problem_names[i]
+    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
+        name = prob.sub_problem_name[i]
         _monitor_function_names!(names, prob.sub_problem[i], Symbol(prefix, name, :.))
     end
-    for i in eachindex(prob.monitor_function, prob.monitor_function_names)
-        name = prob.monitor_function_names[i]
+    for i in eachindex(prob.monitor_function, prob.monitor_function_name)
+        name = prob.monitor_function_name[i]
         push!(names, Symbol(prefix, name))
     end
     return names
@@ -133,16 +133,16 @@ end
 
 Return the names of the subproblems in the problem specified.
 """
-function sub_problem_names end
+function sub_problem_name end
 
-function sub_problem_names(prob::AbstractContinuationProblem)
+function sub_problem_name(prob::AbstractContinuationProblem)
     return _sub_problem_names!(Symbol[], prob, Symbol())
 end
 
 function _sub_problem_names!(names::Vector{Symbol}, prob::AbstractContinuationProblem,
                              prefix)
-    for i in eachindex(prob.sub_problem, prob.sub_problem_names)
-        name = prob.sub_problem_names[i]
+    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
+        name = prob.sub_problem_name[i]
         _sub_problem_names!(names, prob.sub_problem[i], Symbol(prefix, name, :.))
         push!(names, Symbol(prefix, name))
     end
@@ -201,7 +201,7 @@ function close_problem(prob::ContinuationProblem)
         push!(sub_problem, close_problem(prob.sub_problem[i]))
     end
     return ClosedProblem(prob.zero_function, prob.monitor_function,
-                         prob.monitor_function_names, sub_problem, prob.sub_problem_names)
+                         prob.monitor_function_name, sub_problem, prob.sub_problem_name)
 end
 
 """
@@ -215,27 +215,27 @@ See [`close_problem`](@ref)
 struct ClosedProblem{Z, M, MNAME, P, PNAME} <: AbstractContinuationProblem
     zero_function::Z
     monitor_function::M
-    monitor_function_names::Vector{Symbol}
+    monitor_function_name::Vector{Symbol}
     sub_problem::P
-    sub_problem_names::Vector{Symbol}
+    sub_problem_name::Vector{Symbol}
 
-    function ClosedProblem(zero_function, monitor_function, monitor_function_names,
-                           sub_problem, sub_problem_names)
-        if length(monitor_function) != length(monitor_function_names)
+    function ClosedProblem(zero_function, monitor_function, monitor_function_name,
+                           sub_problem, sub_problem_name)
+        if length(monitor_function) != length(monitor_function_name)
             throw(ArgumentError("Each monitor function must have one and only one name"))
         end
-        if length(sub_problem) != length(sub_problem_names)
+        if length(sub_problem) != length(sub_problem_name)
             throw(ArgumentError("Each subproblem must have one and only one name"))
         end
         if !all(isa.(sub_problem, ClosedProblem))
             throw(ArgumentError("All subproblems of a closed problem must also be closed"))
         end
-        _check_names([monitor_function_names; sub_problem_names])  # check for duplicates and reserved names
+        _check_names([monitor_function_name; sub_problem_name])  # check for duplicates and reserved names
         return new{typeof(zero_function), Tuple{(typeof.(monitor_function))...},
-                   Tuple{monitor_function_names...}, Tuple{(typeof.(sub_problem))...},
-                   Tuple{sub_problem_names...}}(zero_function, (monitor_function...,),
-                                                copy(monitor_function_names),
-                                                (sub_problem...,), copy(sub_problem_names))
+                   Tuple{monitor_function_name...}, Tuple{(typeof.(sub_problem))...},
+                   Tuple{sub_problem_name...}}(zero_function, (monitor_function...,),
+                                                copy(monitor_function_name),
+                                                (sub_problem...,), copy(sub_problem_name))
     end
 end
 
@@ -317,8 +317,8 @@ function _get_initial_data(prob::AbstractContinuationProblem)
         push!(data, name => _data)
     end
     (_u0, _data) = get_initial_data(prob.zero_function)
-    push!(u0, name => _u0)
-    push!(data, name => _data)
+    push!(u0, :zero => _u0)
+    push!(data, :zero => _data)
     for i in eachindex(prob.monitor_function, prob.monitor_function_name)
         name = prob.monitor_function_name[i]
         # TODO: decide if monitor functions can introduce new state variables
@@ -349,7 +349,7 @@ struct ContinuationParameter{L}
     lens::L
 end
 
-function eval_monitor_function(cpar::ContinuationParameter, u, data; parent)
+function (cpar::ContinuationParameter)(u, data; parent)
     return cpar.lens(u)
 end
 
