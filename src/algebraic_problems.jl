@@ -1,11 +1,22 @@
 export algebraic_problem
 
-struct AlgebraicProblem{F}
+struct AlgebraicProblem{IIP, F}
     f::F
     u0::Any
 end
 
-(alg::AlgebraicProblem)(u, data; parent) = alg.f(u.u, u.p)
+function AlgebraicProblem(f, u0)
+    # Try to determine if the problem is in place or not
+    for method in methods(f)
+        if method.nargs == 4  # (res, u, p) + 1
+            return AlgebraicProblem{true, typeof(f)}(f, u0)
+        end
+    end
+    return AlgebraicProblem{false, typeof(f)}(f, u0)
+end
+
+(alg::AlgebraicProblem{true})(res, u, data; parent) = alg.f(res, u.u, u.p)
+(alg::AlgebraicProblem{false})(res, u, data; parent) = (res .= alg.f(u.u, u.p))
 
 get_initial_data(alg::AlgebraicProblem) = (alg.u0, nothing)
 

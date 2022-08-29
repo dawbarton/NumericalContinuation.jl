@@ -234,17 +234,17 @@ struct ClosedProblem{Z, M, MNAME, P, PNAME} <: AbstractContinuationProblem
         return new{typeof(zero_function), Tuple{(typeof.(monitor_function))...},
                    Tuple{monitor_function_name...}, Tuple{(typeof.(sub_problem))...},
                    Tuple{sub_problem_name...}}(zero_function, (monitor_function...,),
-                                                copy(monitor_function_name),
-                                                (sub_problem...,), copy(sub_problem_name))
+                                               copy(monitor_function_name),
+                                               (sub_problem...,), copy(sub_problem_name))
     end
 end
 
 ClosedProblem(prob::ContinuationProblem) = close_problem(prob)
 close_problem(prob::ClosedProblem) = prob
 
-@generated function eval_zero_function(prob::ClosedProblem, u, data)
+@generated function eval_zero_function!(res, prob::ClosedProblem, u, data)
     result = :([])
-    _gen_zero_function!(result.args, prob, :prob, :u, :data)
+    _gen_zero_function!(result.args, prob, :res, :prob, :u, :data)
     return :(reduce(hcat, $result))
 end
 
@@ -253,27 +253,28 @@ end
 
 INTERNAL ONLY
 
-Generate an expression tree to call `zero_function` on a `ClosedProblem` and its
-subproblems, returning a vector. This function should be called from an `@generated`
+Generate an expression tree to call each zero function within a `ClosedProblem` and its
+subproblems, acting in place. This function should be called from an `@generated`
 function. `prob`, `u`, and `data` are the names of the corresponding parameters in the
 generated function given as a `Symbol` or `Expr`.
 """
 function _gen_zero_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
-                             prob, u, data) where {Z, M, MNAME, P, PNAME}
+                             res, prob, u, data) where {Z, M, MNAME, P, PNAME}
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
-        _gen_zero_function!(result, P.parameters[i], :($prob.sub_problem[$i]), :($u.$name),
-                            :($data.$name))
+        _gen_zero_function!(result, P.parameters[i], :($res.$name),
+                            :($prob.sub_problem[$i]), :($u.$name), :($data.$name))
     end
     if Z !== Nothing
-        push!(result, :($prob.zero_function($u.zero, $data.zero; parent = ($u, $data))))
+        push!(result,
+              :($prob.zero_function!($res.zero, $u.zero, $data.zero; parent = ($u, $data))))
     end
     return result
 end
 
-@generated function eval_monitor_function(prob::ClosedProblem, u, data)
+@generated function eval_monitor_function!(res, prob::ClosedProblem, u, data)
     result = :([])
-    _gen_monitor_function!(result.args, prob, :prob, :u, :data)
+    _gen_monitor_function!(result.args, prob, :res, :prob, :u, :data)
     return result
 end
 
@@ -282,22 +283,23 @@ end
 
 INTERNAL ONLY
 
-Generate an expression tree to call `monitor_function` on a `ClosedProblem` and its
-subproblems, returning a vector. This function should be called from an `@generated`
+Generate an expression tree to call each monitor function within a `ClosedProblem` and its
+subproblems, acting in place. This function should be called from an `@generated`
 function. `prob`, `u`, and `data` are the names of the corresponding parameters in the
 generated function given as a `Symbol` or `Expr`.
 """
 function _gen_monitor_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
-                                prob, u, data) where {Z, M, MNAME, P, PNAME}
+                                res, prob, u, data) where {Z, M, MNAME, P, PNAME}
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
-        _gen_monitor_function!(result, P.parameters[i], :($prob.sub_problem[$i]),
-                               :($u.$name), :($data.$name))
+        _gen_monitor_function!(result, P.parameters[i], :($res.$name),
+                               :($prob.sub_problem[$i]), :($u.$name), :($data.$name))
     end
     for i in Base.OneTo(length(M.parameters))
         name = MNAME.parameters[i]
         push!(result,
-              :($prob.monitor_function[$i]($u.zero, $data.$name; parent = ($u, $data))))
+              :($res.monitor[$i] = $prob.monitor_function[$i]($u.zero, $data.$name;
+                                                              parent = ($u, $data))))
     end
     return result
 end
