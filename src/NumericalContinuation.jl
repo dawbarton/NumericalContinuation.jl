@@ -4,7 +4,7 @@ using ComponentArrays
 using Accessors
 using DocStringExtensions
 
-const RESERVED_NAMES = Set([:zero])
+const RESERVED_NAMES = Set([:zero, :monitor])
 
 include("continuation_problem.jl")
 include("algebraic_problems.jl")

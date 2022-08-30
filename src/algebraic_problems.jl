@@ -37,7 +37,7 @@ end
 (alg::AlgebraicProblem{false})(res, u, data; parent) = (res .= alg.f(u.u, u.p))
 
 get_initial_data(alg::AlgebraicProblem) = (alg.u0, nothing)
-get_residual_vector_zero(alg::AlgebraicProblem, ::Any, ::Any) = alg.dim
+get_residual_vector(alg::AlgebraicProblem, u0, ::Any) = zeros(eltype(u0), alg.dim)
 
 function algebraic_problem(f, u0::Union{AbstractVector, NamedTuple},
                            p0::Union{AbstractVector, NamedTuple} = (;);

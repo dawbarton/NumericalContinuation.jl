@@ -242,10 +242,33 @@ end
 ClosedProblem(prob::ContinuationProblem) = close_problem(prob)
 close_problem(prob::ClosedProblem) = prob
 
-@generated function eval_zero_function!(res, prob::ClosedProblem, u, data)
-    result = :([])
-    _gen_zero_function!(result.args, prob, :res, :prob, :u, :data)
-    return :(reduce(hcat, $result))
+@generated function eval_function!(res, prob::ClosedProblem, u, data, active, monitor)
+    prob = typeof(_prob)
+    result = quote
+        j = 1
+    end
+    _gen_zero_function!(result.args, prob, :(res.zero), :prob, :u, :data)
+    allmonitor_function = _gen_monitor_function!([], prob, :(res.monitor), :prob, :u, :data)
+    for (i, monitor_function) in enumerate(allmonitor_function)
+        push!(result.args,
+              :((monitor_val, j) = ifelse($i in active, (u.monitor[j], j + 1),
+                                          (monitor[$i], j))))
+        push!(result.args,
+              :(res.monitor[$i] = $monitor_function - monitor_val))
+    end
+    push!(result.args, :(return res))
+    return result
+end
+
+@generated function eval_monitor_function!(res, prob::ClosedProblem, u, data)
+    prob = typeof(_prob)
+    result = quote end
+    allmonitor_function = _gen_monitor_function!([], prob, :(res.monitor), :prob, :u, :data)
+    for (i, monitor_function) in enumerate(allmonitor_function)
+        push!(result.args, :(res.monitor[$i] = $monitor_function))
+    end
+    push!(result.args, :(return res))
+    return result
 end
 
 """
@@ -272,12 +295,6 @@ function _gen_zero_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}
     return result
 end
 
-@generated function eval_monitor_function!(res, prob::ClosedProblem, u, data)
-    result = :([])
-    _gen_monitor_function!(result.args, prob, :res, :prob, :u, :data)
-    return result
-end
-
 """
     $SIGNATURES
 
@@ -298,8 +315,7 @@ function _gen_monitor_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNA
     for i in Base.OneTo(length(M.parameters))
         name = MNAME.parameters[i]
         push!(result,
-              :($res.monitor[$i] = $prob.monitor_function[$i]($u.zero, $data.$name;
-                                                              parent = ($u, $data))))
+              :($prob.monitor_function[$i]($u.zero, $data.$name; parent = ($u, $data))))
     end
     return result
 end
@@ -332,38 +348,27 @@ end
 
 get_initial_data(monitor_function) = nothing  # fall back for monitor functions
 
-function get_residual_vector_zero(prob::AbstractContinuationProblem, u0, data)
-    return ComponentVector(_get_residual_vector_zero(prob, u0, data))
+function get_residual_vector(prob::AbstractContinuationProblem, u0, data)
+    (res_zero, res_monitor) = _get_residual_vector(prob, u0, data)
+    return ComponentVector(zero = res_zero, monitor = res_monitor)
 end
 
-function _get_residual_vector_zero(prob::AbstractContinuationProblem, u0, data)
+function _get_residual_vector(prob::AbstractContinuationProblem, u0, data)
     # TODO: Might want to specialise this on ClosedProblem if used repeatedly?
-    res_vec = []
+    res_zero_vec = []
+    res_monitor_vec = []
     for i in eachindex(prob.sub_problem, prob.sub_problem_name)
         name = prob.sub_problem_name[i]
-        _res_vec = _get_residual_vector_zero(prob.sub_problem[i], u0[name], data[name])
-        push!(res_vec, name => _res_vec)
+        (_res_zero_vec, _res_monitor_vec) = _get_residual_vector(prob.sub_problem[i],
+                                                                 u0[name], data[name])
+        push!(res_zero_vec, name => _res_zero_vec)
+        push!(res_monitor_vec, name => _res_monitor_vec)
     end
-    _res_vec = get_residual_vector_zero(prob.zero_function, u0, data)
-    push!(res_vec, :zero => _res_vec)
-    return NamedTuple(res_vec)
-end
-
-function get_residual_vector_monitor(prob::AbstractContinuationProblem, u0, ::Any)
-    return ComponentVector(_get_residual_vector_monitor(prob, eltype(u0)))
-end
-
-function _get_residual_vector_monitor(prob::AbstractContinuationProblem, T)
-    # Might want to specialise this on ClosedProblem ... but shouldn't need to change
-    res_vec = []
-    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
-        name = prob.sub_problem_name[i]
-        _res_vec = _get_residual_vector_monitor(prob.sub_problem[i], T)
-        push!(res_vec, name => _res_vec)
-    end
-    _res_vec = zeros(T, length(prob.monitor_function_name))
-    push!(res_vec, :monitor => _res_vec)
-    return NamedTuple(res_vec)
+    _res_zero_vec = get_residual_vector(prob.zero_function, u0, data)
+    _res_monitor_vec = zeros(eltype(u0), length(prob.monitor_function_name))
+    push!(res_zero_vec, :zero => _res_zero_vec)
+    push!(res_monitor_vec, :monitor => _res_monitor_vec)
+    return (NamedTuple(res_zero_vec), NamedTuple(res_monitor_vec))
 end
 
 struct SimpleMonitorFunction{F}
