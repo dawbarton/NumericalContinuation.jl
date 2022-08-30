@@ -42,7 +42,6 @@ get_residual_vector_zero(alg::AlgebraicProblem, ::Any, ::Any) = alg.dim
 function algebraic_problem(f, u0::Union{AbstractVector, NamedTuple},
                            p0::Union{AbstractVector, NamedTuple} = (;);
                            dim::Union{Missing, Integer} = missing)
-    # TODO: need some way of coersing the type of p0 to be the same as u0 when empty (Float64[] works but how do I get it?)
     prob = ContinuationProblem(AlgebraicProblem(f, ComponentVector((u = u0, p = p0));
                                                 dim = dim))
     # Try to extract names
