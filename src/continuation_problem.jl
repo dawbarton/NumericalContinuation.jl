@@ -141,7 +141,7 @@ end
 
 function _sub_problem_names!(names::Vector{Symbol}, prob::AbstractContinuationProblem,
                              prefix)
-    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
+    for i in eachindex(prob.sub_problem_name)
         name = prob.sub_problem_name[i]
         _sub_problem_names!(names, prob.sub_problem[i], Symbol(prefix, name, :.))
         push!(names, Symbol(prefix, name))
@@ -250,7 +250,7 @@ close_problem(prob::ClosedProblem) = prob
     allmonitor_function = _gen_monitor_function!([], prob, :(res.monitor), :prob, :u, :data)
     for (i, monitor_function) in enumerate(allmonitor_function)
         push!(result.args,
-              :(monitor_val = $i in active ? u.monitor[j += 1] : monitor[$i]))
+              :(monitor_val = $i in active ? u.monitor[j += 1] : monitor[$i])) # could replace with ifelse and get (with default value)
         push!(result.args,
               :(res.monitor[$i] = $monitor_function - monitor_val))
     end
@@ -325,16 +325,16 @@ end
 function _get_initial_data(prob::AbstractContinuationProblem)
     u0 = []
     data = []
-    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
+    for i in eachindex(prob.sub_problem_name)
         name = prob.sub_problem_name[i]
         (_u0, _data) = _get_initial_data(prob.sub_problem[i])
         push!(u0, name => _u0)
         push!(data, name => _data)
     end
-    (_u0, _data) = get_initial_data(prob.zero_function)
+    (_u0, _data) = get_initial_data(prob.zero_function!)
     push!(u0, :zero => _u0)
     push!(data, :zero => _data)
-    for i in eachindex(prob.monitor_function, prob.monitor_function_name)
+    for i in eachindex(prob.monitor_function_name)
         name = prob.monitor_function_name[i]
         # TODO: decide if monitor functions can introduce new state variables
         _data = get_initial_data(prob.monitor_function[i])
@@ -354,14 +354,14 @@ function _get_residual_vector(prob::AbstractContinuationProblem, u0, data)
     # TODO: Might want to specialise this on ClosedProblem if used repeatedly?
     res_zero_vec = []
     res_monitor_vec = []
-    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
+    for i in eachindex(prob.sub_problem_name)
         name = prob.sub_problem_name[i]
         (_res_zero_vec, _res_monitor_vec) = _get_residual_vector(prob.sub_problem[i],
                                                                  u0[name], data[name])
         push!(res_zero_vec, name => _res_zero_vec)
         push!(res_monitor_vec, name => _res_monitor_vec)
     end
-    _res_zero_vec = get_residual_vector(prob.zero_function, u0, data)
+    _res_zero_vec = get_residual_vector(prob.zero_function!, u0, data)
     _res_monitor_vec = zeros(eltype(u0), length(prob.monitor_function_name))
     push!(res_zero_vec, :zero => _res_zero_vec)
     push!(res_monitor_vec, :monitor => _res_monitor_vec)
