@@ -17,15 +17,15 @@ and zero or more subproblems. `ContinuationProblem`s are coupled together in a t
 structure to form the overall problem definition.
 """
 struct ContinuationProblem <: AbstractContinuationProblem
-    zero_function::Any
+    zero_function!::Any
     monitor_function::Vector{Any}
     monitor_function_name::Vector{Symbol}
     sub_problem::Vector{Any}
     sub_problem_name::Vector{Symbol}
 end
 
-function ContinuationProblem(zero_function; monitor = [], sub = [])
-    prob = ContinuationProblem(zero_function, [], Symbol[], [], Symbol[])
+function ContinuationProblem(zero_function!; monitor = [], sub = [])
+    prob = ContinuationProblem(zero_function!, [], Symbol[], [], Symbol[])
     isempty(sub) || add_sub_problem!(prob, sub)
     isempty(monitor) || add_monitor_function!(prob, monitor)
     return prob
@@ -117,11 +117,11 @@ end
 function _monitor_function_names!(names::Vector{Symbol}, prob::AbstractContinuationProblem,
                                   prefix)
     # Must match the ordering of _gen_monitor_function!
-    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
+    for i in eachindex(prob.sub_problem_name)
         name = prob.sub_problem_name[i]
         _monitor_function_names!(names, prob.sub_problem[i], Symbol(prefix, name, :.))
     end
-    for i in eachindex(prob.monitor_function, prob.monitor_function_name)
+    for i in eachindex(prob.monitor_function_name)
         name = prob.monitor_function_name[i]
         push!(names, Symbol(prefix, name))
     end
@@ -200,7 +200,7 @@ function close_problem(prob::ContinuationProblem)
     for i in eachindex(prob.sub_problem)
         push!(sub_problem, close_problem(prob.sub_problem[i]))
     end
-    return ClosedProblem(prob.zero_function, prob.monitor_function,
+    return ClosedProblem(prob.zero_function!, prob.monitor_function,
                          prob.monitor_function_name, sub_problem, prob.sub_problem_name)
 end
 
@@ -213,13 +213,13 @@ This is a closed (i.e., the structure cannot be modified any further) version of
 See [`close_problem`](@ref)
 """
 struct ClosedProblem{Z, M, MNAME, P, PNAME} <: AbstractContinuationProblem
-    zero_function::Z
+    zero_function!::Z
     monitor_function::M
     monitor_function_name::Vector{Symbol}
     sub_problem::P
     sub_problem_name::Vector{Symbol}
 
-    function ClosedProblem(zero_function, monitor_function, monitor_function_name,
+    function ClosedProblem(zero_function!, monitor_function, monitor_function_name,
                            sub_problem, sub_problem_name)
         if length(monitor_function) != length(monitor_function_name)
             throw(ArgumentError("Each monitor function must have one and only one name"))
@@ -231,9 +231,9 @@ struct ClosedProblem{Z, M, MNAME, P, PNAME} <: AbstractContinuationProblem
             throw(ArgumentError("All subproblems of a closed problem must also be closed"))
         end
         _check_names([monitor_function_name; sub_problem_name])  # check for duplicates and reserved names
-        return new{typeof(zero_function), Tuple{(typeof.(monitor_function))...},
+        return new{typeof(zero_function!), Tuple{(typeof.(monitor_function))...},
                    Tuple{monitor_function_name...}, Tuple{(typeof.(sub_problem))...},
-                   Tuple{sub_problem_name...}}(zero_function, (monitor_function...,),
+                   Tuple{sub_problem_name...}}(zero_function!, (monitor_function...,),
                                                copy(monitor_function_name),
                                                (sub_problem...,), copy(sub_problem_name))
     end
@@ -243,7 +243,6 @@ ClosedProblem(prob::ContinuationProblem) = close_problem(prob)
 close_problem(prob::ClosedProblem) = prob
 
 @generated function eval_function!(res, prob::ClosedProblem, u, data, active, monitor)
-    prob = typeof(_prob)
     result = quote
         j = 1
     end
@@ -251,8 +250,7 @@ close_problem(prob::ClosedProblem) = prob
     allmonitor_function = _gen_monitor_function!([], prob, :(res.monitor), :prob, :u, :data)
     for (i, monitor_function) in enumerate(allmonitor_function)
         push!(result.args,
-              :((monitor_val, j) = ifelse($i in active, (u.monitor[j], j + 1),
-                                          (monitor[$i], j))))
+              :(monitor_val = $i in active ? u.monitor[j += 1] : monitor[$i]))
         push!(result.args,
               :(res.monitor[$i] = $monitor_function - monitor_val))
     end
@@ -261,11 +259,10 @@ close_problem(prob::ClosedProblem) = prob
 end
 
 @generated function eval_monitor_function!(res, prob::ClosedProblem, u, data)
-    prob = typeof(_prob)
     result = quote end
     allmonitor_function = _gen_monitor_function!([], prob, :(res.monitor), :prob, :u, :data)
     for (i, monitor_function) in enumerate(allmonitor_function)
-        push!(result.args, :(res.monitor[$i] = $monitor_function))
+        push!(result.args, :(res[$i] = $monitor_function))
     end
     push!(result.args, :(return res))
     return result
