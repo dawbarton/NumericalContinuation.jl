@@ -332,6 +332,48 @@ end
 
 get_initial_data(monitor_function) = nothing  # fall back for monitor functions
 
+function get_residual_vector_zero(prob::AbstractContinuationProblem, u0, data)
+    return ComponentVector(_get_residual_vector_zero(prob, u0, data))
+end
+
+function _get_residual_vector_zero(prob::AbstractContinuationProblem, u0, data)
+    # TODO: Might want to specialise this on ClosedProblem if used repeatedly?
+    res_vec = []
+    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
+        name = prob.sub_problem_name[i]
+        _res_vec = _get_residual_vector_zero(prob.sub_problem[i], u0[name], data[name])
+        push!(res_vec, name => _res_vec)
+    end
+    _res_vec = get_residual_vector_zero(prob.zero_function, u0, data)
+    push!(res_vec, :zero => _res_vec)
+    return NamedTuple(res_vec)
+end
+
+function get_residual_vector_monitor(prob::AbstractContinuationProblem, u0, ::Any)
+    return ComponentVector(_get_residual_vector_monitor(prob, eltype(u0)))
+end
+
+function _get_residual_vector_monitor(prob::AbstractContinuationProblem, T)
+    # Might want to specialise this on ClosedProblem ... but shouldn't need to change
+    res_vec = []
+    for i in eachindex(prob.sub_problem, prob.sub_problem_name)
+        name = prob.sub_problem_name[i]
+        _res_vec = _get_residual_vector_monitor(prob.sub_problem[i], T)
+        push!(res_vec, name => _res_vec)
+    end
+    _res_vec = zeros(T, length(prob.monitor_function_name))
+    push!(res_vec, :monitor => _res_vec)
+    return NamedTuple(res_vec)
+end
+
+struct SimpleMonitorFunction{F}
+    f::F
+end
+
+(monitor::SimpleMonitorFunction)(u, data; parent) = monitor.f(u)
+
+monitor_function(f) = SimpleMonitorFunction(f)
+
 """
     ContinuationParameter(name, lens)
 
