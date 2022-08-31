@@ -62,10 +62,31 @@ end
 
 # prob = algebraic_problem((u, p) -> [u.x^2 + u.y^2 - p.r], (x=1.0, y=0.0), (r=1.0,))
 
-function test1()
-    prob = algebraic_problem((u, p) -> u[1]^2 + (u[2] - 1)^2 - 1, [1.0, 1.0, 0.5])
-    add_monitor_function!(prob, :ψ₁, monitor_function(u -> sqrt(u[1]^2 + u[2]^2)))
-    add_monitor_function!(prob, :ψ₂, monitor_function(u -> u[1]))
-    add_monitor_function!(prob, :ψ₃, monitor_function(u -> u[3] - u[1] + 0.5))
-    return prob
+@testitem "Algebraic problems" begin
+    function alg_problem1(::Type{T}) where T
+        # Problem 1 (example from COCO book)
+        _u0 = T[1.0, 1.0, 0.5]
+        prob = algebraic_problem((u, p) -> u[1]^2 + (u[2] - 1)^2 - 1, _u0)
+        add_monitor_function!(prob, :ψ₁, monitor_function(u -> sqrt(u[1]^2 + u[2]^2)))
+        add_monitor_function!(prob, :ψ₂, monitor_function(u -> u[1]))
+        add_monitor_function!(prob, :ψ₃, monitor_function(u -> u[3] - u[1] + 0.5))
+        @test monitor_function_name(prob) == [:ψ₁, :ψ₂, :ψ₃]
+        @test isempty(sub_problem_name(prob))
+        (u0, data) = NumericalContinuation.get_initial_data(prob)
+        @test (collect(u0) == _u0) && (eltype(u0) == eltype(_u0))
+        res = NumericalContinuation.get_residual_vector(prob, u0, data)
+        @test (length(res) == 4) && (eltype(res) == eltype(_u0))
+        func = NumericalContinuation.ContinuationFunction(prob)
+        monitor = zeros(length(monitor_function_name(prob)))
+        NumericalContinuation.eval_monitor_function!(monitor, func, u0, data)
+        @test monitor ≈ [sqrt(2), 1.0, 0.0]
+        res .= one(eltype(res))
+        NumericalContinuation.eval_function!(res, func, u0, data, Set(Int[]), monitor)
+        @test res ≈ [0, 0, 0, 0]
+        u0_ext = [u0; ComponentVector(monitor=[0])]
+        NumericalContinuation.eval_function!(res, func, u0_ext, data, Set([1]), monitor)
+        @test res ≈ [0, sqrt(2), 0, 0]
+    end
+    alg_problem1(Float64)
+    alg_problem1(Float32)
 end

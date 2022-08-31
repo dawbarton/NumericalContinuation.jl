@@ -1,6 +1,6 @@
 using NumericalContinuation
 using Test
 
-@testset "NumericalContinuation.jl" begin
-    # Write your tests here.
-end
+using TestItemRunner
+
+@run_package_tests

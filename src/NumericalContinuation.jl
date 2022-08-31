@@ -1,18 +1,15 @@
 module NumericalContinuation
 
-using ComponentArrays: ComponentVector
+using ComponentArrays: ComponentVector, labels
 using Accessors: @optic
-using DocStringExtensions
+using DocStringExtensions: SIGNATURES, TYPEDEF
+using TestItems: @testitem
 
 const RESERVED_NAMES = Set([:zero, :monitor])
 
 include("continuation_problem.jl")
+include("continuation_function.jl")
 include("algebraic_problems.jl")
-
-function test()
-    a = ContinuationProblem(sin, monitor=[:a=>identity, :b=>identity])
-    return ContinuationProblem(cos, sub = [:sin => a])
-end
 
 # prob = zero_problem(u -> [u.x^2 + u.y^2 - 1]; u0=ComponentArray(x=1.0, y=0.0))
 # prob = zero_problem(u -> [u[1]^2 + u[2]^2 - 1]; u0=[1.0, 0.0])
