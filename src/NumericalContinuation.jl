@@ -1,7 +1,7 @@
 module NumericalContinuation
 
-using ComponentArrays
-using Accessors
+using ComponentArrays: ComponentVector
+using Accessors: @optic
 using DocStringExtensions
 
 const RESERVED_NAMES = Set([:zero, :monitor])

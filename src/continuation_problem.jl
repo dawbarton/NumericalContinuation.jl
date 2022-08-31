@@ -1,12 +1,10 @@
 # Types
-export ContinuationProblem, ClosedProblem
+export ContinuationProblem, ContinuationFunction
 # Functions
 export add_monitor_function!, add_sub_problem!, monitor_function_name, sub_problem_name,
        add_parameter!
 # Re-exports
 export @optic, ComponentVector
-
-abstract type AbstractContinuationProblem end
 
 """
     $TYPEDEF
@@ -16,7 +14,7 @@ This is the basic structure required to define a continuation problem. Each
 and zero or more subproblems. `ContinuationProblem`s are coupled together in a tree
 structure to form the overall problem definition.
 """
-struct ContinuationProblem <: AbstractContinuationProblem
+struct ContinuationProblem
     zero_function!::Any
     monitor_function::Vector{Any}
     monitor_function_name::Vector{Symbol}
@@ -110,11 +108,11 @@ Return the names of the monitor functions in the problem specified and its subpr
 """
 function monitor_function_name end
 
-function monitor_function_name(prob::AbstractContinuationProblem)
+function monitor_function_name(prob::ContinuationProblem)
     return _monitor_function_names!(Symbol[], prob, Symbol())
 end
 
-function _monitor_function_names!(names::Vector{Symbol}, prob::AbstractContinuationProblem,
+function _monitor_function_names!(names::Vector{Symbol}, prob::ContinuationProblem,
                                   prefix)
     # Must match the ordering of _gen_monitor_function!
     for i in eachindex(prob.sub_problem_name)
@@ -135,11 +133,11 @@ Return the names of the subproblems in the problem specified.
 """
 function sub_problem_name end
 
-function sub_problem_name(prob::AbstractContinuationProblem)
+function sub_problem_name(prob::ContinuationProblem)
     return _sub_problem_names!(Symbol[], prob, Symbol())
 end
 
-function _sub_problem_names!(names::Vector{Symbol}, prob::AbstractContinuationProblem,
+function _sub_problem_names!(names::Vector{Symbol}, prob::ContinuationProblem,
                              prefix)
     for i in eachindex(prob.sub_problem_name)
         name = prob.sub_problem_name[i]
@@ -187,24 +185,6 @@ function _check_names(names)
 end
 
 """
-    $SIGNATURES
-
-Close the `ContinuationProblem` so that structure can no longer be modified (e.g., no new
-zero functions / monitor functions can be added). The resulting `ClosedProblem` can be used
-efficiently with functions such as `zero_function` and `monitor_function`.
-"""
-function close_problem end
-
-function close_problem(prob::ContinuationProblem)
-    sub_problem = []
-    for i in eachindex(prob.sub_problem)
-        push!(sub_problem, close_problem(prob.sub_problem[i]))
-    end
-    return ClosedProblem(prob.zero_function!, prob.monitor_function,
-                         prob.monitor_function_name, sub_problem, prob.sub_problem_name)
-end
-
-"""
     $TYPEDEF
 
 This is a closed (i.e., the structure cannot be modified any further) version of the
@@ -212,37 +192,49 @@ This is a closed (i.e., the structure cannot be modified any further) version of
 
 See [`close_problem`](@ref)
 """
-struct ClosedProblem{Z, M, MNAME, P, PNAME} <: AbstractContinuationProblem
+struct ContinuationFunction{Z, M, MNAME, P, PNAME} <: ContinuationProblem
     zero_function!::Z
     monitor_function::M
-    monitor_function_name::Vector{Symbol}
     sub_problem::P
-    sub_problem_name::Vector{Symbol}
 
-    function ClosedProblem(zero_function!, monitor_function, monitor_function_name,
-                           sub_problem, sub_problem_name)
+    function ContinuationFunction(zero_function!, monitor_function, monitor_function_name,
+                                  sub_problem, sub_problem_name)
         if length(monitor_function) != length(monitor_function_name)
             throw(ArgumentError("Each monitor function must have one and only one name"))
         end
         if length(sub_problem) != length(sub_problem_name)
             throw(ArgumentError("Each subproblem must have one and only one name"))
         end
-        if !all(isa.(sub_problem, ClosedProblem))
+        if !all(isa.(sub_problem, ContinuationFunction))
             throw(ArgumentError("All subproblems of a closed problem must also be closed"))
         end
         _check_names([monitor_function_name; sub_problem_name])  # check for duplicates and reserved names
         return new{typeof(zero_function!), Tuple{(typeof.(monitor_function))...},
                    Tuple{monitor_function_name...}, Tuple{(typeof.(sub_problem))...},
                    Tuple{sub_problem_name...}}(zero_function!, (monitor_function...,),
-                                               copy(monitor_function_name),
-                                               (sub_problem...,), copy(sub_problem_name))
+                                               (sub_problem...,))
     end
 end
 
-ClosedProblem(prob::ContinuationProblem) = close_problem(prob)
-close_problem(prob::ClosedProblem) = prob
+"""
+    $SIGNATURES
 
-@generated function eval_function!(res, prob::ClosedProblem, u, data, active, monitor)
+Close the `ContinuationProblem` so that structure can no longer be modified (e.g., no new
+zero functions / monitor functions can be added). The resulting `ContinuationFunction` can be used
+efficiently with functions such as `zero_function` and `monitor_function`.
+"""
+function ContinuationFunction(prob::ContinuationProblem)
+    sub_problem = []
+    for i in eachindex(prob.sub_problem)
+        push!(sub_problem, close_problem(prob.sub_problem[i]))
+    end
+    return ContinuationFunction(prob.zero_function!, prob.monitor_function,
+                                prob.monitor_function_name, sub_problem,
+                                prob.sub_problem_name)
+end
+
+@generated function eval_function!(res, prob::ContinuationFunction, u, data, active,
+                                   monitor)
     result = quote
         j = 1
     end
@@ -258,7 +250,7 @@ close_problem(prob::ClosedProblem) = prob
     return result
 end
 
-@generated function eval_monitor_function!(res, prob::ClosedProblem, u, data)
+@generated function eval_monitor_function!(res, prob::ContinuationFunction, u, data)
     result = quote end
     allmonitor_function = _gen_monitor_function!([], prob, :(res.monitor), :prob, :u, :data)
     for (i, monitor_function) in enumerate(allmonitor_function)
@@ -273,12 +265,12 @@ end
 
 INTERNAL ONLY
 
-Generate an expression tree to call each zero function within a `ClosedProblem` and its
+Generate an expression tree to call each zero function within a `ContinuationFunction` and its
 subproblems, acting in place. This function should be called from an `@generated`
 function. `prob`, `u`, and `data` are the names of the corresponding parameters in the
 generated function given as a `Symbol` or `Expr`.
 """
-function _gen_zero_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
+function _gen_zero_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P, PNAME}},
                              res, prob, u, data) where {Z, M, MNAME, P, PNAME}
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
@@ -297,12 +289,12 @@ end
 
 INTERNAL ONLY
 
-Generate an expression tree to call each monitor function within a `ClosedProblem` and its
+Generate an expression tree to call each monitor function within a `ContinuationFunction` and its
 subproblems, acting in place. This function should be called from an `@generated`
 function. `prob`, `u`, and `data` are the names of the corresponding parameters in the
 generated function given as a `Symbol` or `Expr`.
 """
-function _gen_monitor_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNAME}},
+function _gen_monitor_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P, PNAME}},
                                 res, prob, u, data) where {Z, M, MNAME, P, PNAME}
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
@@ -317,12 +309,12 @@ function _gen_monitor_function!(result, ::Type{ClosedProblem{Z, M, MNAME, P, PNA
     return result
 end
 
-function get_initial_data(prob::AbstractContinuationProblem)
+function get_initial_data(prob::ContinuationProblem)
     (u0, data) = _get_initial_data(prob)
     return (ComponentVector(u0), data)
 end
 
-function _get_initial_data(prob::AbstractContinuationProblem)
+function _get_initial_data(prob::ContinuationProblem)
     u0 = []
     data = []
     for i in eachindex(prob.sub_problem_name)
@@ -345,13 +337,13 @@ end
 
 get_initial_data(monitor_function) = nothing  # fall back for monitor functions
 
-function get_residual_vector(prob::AbstractContinuationProblem, u0, data)
+function get_residual_vector(prob::ContinuationProblem, u0, data)
     (res_zero, res_monitor) = _get_residual_vector(prob, u0, data)
     return ComponentVector(zero = res_zero, monitor = res_monitor)
 end
 
-function _get_residual_vector(prob::AbstractContinuationProblem, u0, data)
-    # TODO: Might want to specialise this on ClosedProblem if used repeatedly?
+function _get_residual_vector(prob::ContinuationProblem, u0, data)
+    # TODO: Might want to specialise this on ContinuationFunction if used repeatedly?
     res_zero_vec = []
     res_monitor_vec = []
     for i in eachindex(prob.sub_problem_name)
