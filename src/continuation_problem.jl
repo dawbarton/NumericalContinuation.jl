@@ -147,43 +147,6 @@ function _sub_problem_names!(names::Vector{Symbol}, prob::ContinuationProblem,
     return names
 end
 
-"""
-    $SIGNATURES
-
-Count the number of times each element of an iterable occurs. Returns a `Dict` mapping
-elements to their count.
-"""
-function count_members(itr)
-    # Taken from https://stackoverflow.com/a/39167771
-    d = Dict{eltype(itr), Int}()
-    for val in itr
-        if isa(val, Number) && isnan(val)
-            continue
-        end
-        d[val] = get(d, val, 0) + 1
-    end
-    return d
-end
-
-"""
-    $SIGNATURES
-
-INTERNAL ONLY
-
-Check the list of (monitor function and subproblem) names for duplicates and reserved names.
-"""
-function _check_names(names)
-    unique_names = count_members(names)
-    dups = findall((>)(1), unique_names)
-    if !isempty(dups)
-        throw(ArgumentError("Duplicate name within problem: $dups"))
-    end
-    if any(in.(names, Ref(RESERVED_NAMES)))
-        throw(ArgumentError("Reserved names ($RESERVED_NAMES) cannot be used"))
-    end
-    return
-end
-
 function get_initial_data(prob::ContinuationProblem)
     (u0, data) = _get_initial_data(prob)
     return (ComponentVector(u0), data)
