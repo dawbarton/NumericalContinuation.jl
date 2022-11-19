@@ -264,3 +264,59 @@ function add_parameter!(prob::ContinuationProblem, names)
     end
     return prob
 end
+
+"""
+    add_parameter_p0!(prob, p0)
+
+Add parameters to a `ContinuationProblem` from a user-supplied parameter list. If `p0` is a
+`ComponentVector` or a `NamedTuple`, the names will be extracted and used. Otherwise, they
+will be labelled `p1` to `pn`, where `n` is the total number of parameters.
+"""
+function add_parameter_p0!(prob::ContinuationProblem, p0)
+    # Try to extract parameter names
+    if p0 isa NamedTuple
+        _p0 = ComponentVector(p0)
+    else
+        _p0 = p0
+    end
+    if _p0 isa ComponentVector
+        for (i, name) in enumerate(labels(_p0))
+            add_parameter!(prob, Symbol(name), @optic _.p[i])
+        end
+    else
+        add_parameter!(prob, 1:length(p0))
+    end
+    return prob
+end
+
+"""
+    IIPWrapper
+
+A function wrapper to ensure that out-of-place functions are wrapped as is-in-place
+functions.
+"""
+struct IIPWrapper{IIP, F}
+    f::F
+end
+
+IIPWrapper(f::IIPWrapper) = f
+
+function IIPWrapper(f)
+    # Try to determine if the problem is in place or not
+    for method in methods(f)
+        if method.nargs == 4  # (res, u, p) + 1
+            return IIPWrapper{true, typeof(f)}(f)
+        end
+    end
+    return IIPWrapper{false, typeof(f)}(f)
+end
+
+"""
+    is_iip(func::IIPWrapper)
+
+Returns true if the wrapper function is-in-place or false if it is out-of-place.
+"""
+is_iip(::IIPWrapper{IIP}) where IIP = IIP
+
+(func::IIPWrapper{false})(res, args...; kwargs...) = (res .= func.f(args...; kwargs...))
+(func::IIPWrapper{true})(res, args...; kwargs...) = func.f(res, args...; kwargs...)
