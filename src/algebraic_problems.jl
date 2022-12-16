@@ -5,16 +5,14 @@ struct AlgebraicProblem{F}
     u0::Any
     dim::Int
     function AlgebraicProblem(f, u, p=(;), dim=missing)
-        if ismissing(dim)
-            # Call the function to see how many outputs it returns
-            dim = length(f(u, p))
-        end
+        # If needed, call the function to see how many outputs it returns
+        _dim = ismissing(dim) ? length(f(u, p)) : dim
         # Empty values for ComponentArrays can only be NamedTuples
         _u = isempty(u) ? (;) : u
         _p = isempty(p) ? (;) : p
         # Ensure that the function has an in-place form
         _f = IIPWrapper(f)
-        return new{typeof(_f)}(_f, ComponentVector((u = _u, p = _p)), dim)
+        return new{typeof(_f)}(_f, ComponentVector((u = _u, p = _p)), _dim)
     end
 end
 
