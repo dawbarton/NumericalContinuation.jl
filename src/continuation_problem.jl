@@ -7,7 +7,7 @@ export add_monitor_function!, add_sub_problem!, monitor_function_name, sub_probl
 export @optic, ComponentVector
 
 """
-    $TYPEDEF
+    ContinuationProblem
 
 This is the basic structure required to define a continuation problem. Each
 `ContinuationProblem` contains an (optional) zero function, zero or more monitor functions,
@@ -22,6 +22,12 @@ struct ContinuationProblem
     sub_problem_name::Vector{Symbol}
 end
 
+"""
+    ContinuationProblem(zero_function!; monitor, sub)
+
+Create a `ContinuationProblem` from a zero function, optionally adding in monitor functions
+and subproblems.
+"""
 function ContinuationProblem(zero_function!; monitor = [], sub = [])
     prob = ContinuationProblem(zero_function!, [], Symbol[], [], Symbol[])
     isempty(sub) || add_sub_problem!(prob, sub)
@@ -30,7 +36,9 @@ function ContinuationProblem(zero_function!; monitor = [], sub = [])
 end
 
 """
-    $SIGNATURES
+    add_monitor_function!(prob, name, mfunc)
+    add_monitor_function!(prob, named_mfunc)
+    add_monitor_function!(prob, named_mfuncs)
 
 Add named monitor function(s) to a continuation problem.
 
@@ -66,7 +74,9 @@ function add_monitor_function!(prob::ContinuationProblem, named_mfuncs)
 end
 
 """
-    $SIGNATURES
+    add_sub_problem!(prob, name, sub_prob)
+    add_sub_problem!(prob, named_sub_prob)
+    add_sub_problem!(prob, named_sub_probs)
 
 Add named subproblems function(s) to a continuation problem.
 
@@ -102,7 +112,7 @@ function add_sub_problem!(prob::ContinuationProblem, named_sub_probs)
 end
 
 """
-    $SIGNATURES
+    monitor_function_name(prob)
 
 Return the names of the monitor functions in the problem specified and its subproblems.
 """
@@ -127,7 +137,7 @@ function _monitor_function_names!(names::Vector{Symbol}, prob::ContinuationProbl
 end
 
 """
-    $SIGNATURES
+    sub_problem_name(prob)
 
 Return the names of the subproblems in the problem specified.
 """
@@ -147,6 +157,16 @@ function _sub_problem_names!(names::Vector{Symbol}, prob::ContinuationProblem,
     return names
 end
 
+"""
+    get_initial_data(prob)
+
+Return the inital values of the state vector `u0` and the chart data `data` as a `Tuple`.
+
+TODO: replace this with an in-place version? It would save allocations (minor) here and
+shift the burden of types to the top level. (I.e., the top level ContinuationProblem would
+determine the type rather than relying on type promotion throughout all the lower level
+instances.)
+"""
 function get_initial_data(prob::ContinuationProblem)
     (u0, data) = _get_initial_data(prob)
     return (ComponentVector(u0), data)
@@ -230,11 +250,16 @@ function (cpar::ContinuationParameter)(u, data; parent)
 end
 
 """
-    $(SIGNATURES)
+    add_parameter!(prob, name, lens)
+    add_parameter!(prob, name, idx)
+    add_parameter!(prob, named_par)
+    add_parameter!(prob, names)
 
 Add a continuation parameter to a continuation problem. Parameters should be specified as
 `:name=>index` pairs; if only names are provided, the index is taken from the position in
 the vector.
+
+TODO: add examples
 """
 function add_parameter! end
 
@@ -246,8 +271,8 @@ function add_parameter!(prob::ContinuationProblem, name::Symbol, idx::Integer)
     add_parameter!(prob, name, @optic _[idx])
 end
 
-function add_parameter!(prob::ContinuationProblem, named_pair::Pair{Symbol})
-    add_parameter!(prob, named_pair[1], named_pair[2])
+function add_parameter!(prob::ContinuationProblem, named_par::Pair{Symbol})
+    add_parameter!(prob, named_par[1], named_par[2])
 end
 
 function add_parameter!(prob::ContinuationProblem, names)

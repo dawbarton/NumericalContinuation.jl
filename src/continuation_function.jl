@@ -1,5 +1,5 @@
 """
-    $SIGNATURES
+    count_members(itr)
 
 Count the number of times each element of an iterable occurs. Returns a `Dict` mapping
 elements to their count.
@@ -17,7 +17,7 @@ function count_members(itr)
 end
 
 """
-    $SIGNATURES
+    _check_names(names)
 
 INTERNAL ONLY
 
@@ -36,12 +36,10 @@ function _check_names(names)
 end
 
 """
-    $TYPEDEF
+    ContinuationFunction
 
 This is a closed (i.e., the structure cannot be modified any further) version of the
 `ContinuationProblem` that is used for computational efficiency during continuation.
-
-See [`close_problem`](@ref)
 """
 struct ContinuationFunction{Z, M, MNAME, P, PNAME}
     zero_function!::Z
@@ -57,7 +55,7 @@ struct ContinuationFunction{Z, M, MNAME, P, PNAME}
             throw(ArgumentError("Each subproblem must have one and only one name"))
         end
         if !all(isa.(sub_problem, ContinuationFunction))
-            throw(ArgumentError("All subproblems of a closed problem must also be closed"))
+            throw(ArgumentError("Each subproblem of a ContinuationFunction must also be a ContinuationFunction"))
         end
         _check_names([monitor_function_name; sub_problem_name])  # check for duplicates and reserved names
         return new{typeof(zero_function!), Tuple{(typeof.(monitor_function))...},
@@ -68,16 +66,16 @@ struct ContinuationFunction{Z, M, MNAME, P, PNAME}
 end
 
 """
-    $SIGNATURES
+    ContinuationFunction(prob)
 
 Close the `ContinuationProblem` so that structure can no longer be modified (e.g., no new
-zero functions / monitor functions can be added). The resulting `ContinuationFunction` can be used
-efficiently with functions such as `zero_function` and `monitor_function`.
+zero functions / monitor functions can be added). The resulting `ContinuationFunction` can
+be used efficiently with functions such as `zero_function` and `monitor_function`.
 """
 function ContinuationFunction(prob::ContinuationProblem)
     sub_problem = []
     for i in eachindex(prob.sub_problem)
-        push!(sub_problem, close_problem(prob.sub_problem[i]))
+        push!(sub_problem, ContinuationFunction(prob.sub_problem[i]))
     end
     return ContinuationFunction(prob.zero_function!, prob.monitor_function,
                                 prob.monitor_function_name, sub_problem,
@@ -112,14 +110,14 @@ end
 end
 
 """
-    $SIGNATURES
+    _gen_zero_function!(result, ::ContinuationFunction, res, prob, u, data)
 
 INTERNAL ONLY
 
-Generate an expression tree to call each zero function within a `ContinuationFunction` and its
-subproblems, acting in place. This function should be called from an `@generated`
-function. `prob`, `u`, and `data` are the names of the corresponding parameters in the
-generated function given as a `Symbol` or `Expr`.
+Generate an expression tree to call each zero function within a `ContinuationFunction` and
+its subproblems, acting in place. This function should be called from an `@generated`
+function. `res`, `prob`, `u`, and `data` are the names of the corresponding parameters in
+the generated function given as a `Symbol` or `Expr`.
 """
 function _gen_zero_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P, PNAME}},
                              res, prob, u, data) where {Z, M, MNAME, P, PNAME}
@@ -136,14 +134,14 @@ function _gen_zero_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P,
 end
 
 """
-    $SIGNATURES
+    _gen_monitor_function!(result, ::ContinuationFunction, res, prob, u, data)
 
 INTERNAL ONLY
 
-Generate an expression tree to call each monitor function within a `ContinuationFunction` and its
-subproblems, acting in place. This function should be called from an `@generated`
-function. `prob`, `u`, and `data` are the names of the corresponding parameters in the
-generated function given as a `Symbol` or `Expr`.
+Generate an expression tree to call each monitor function within a `ContinuationFunction`
+and its subproblems, acting in place. This function should be called from an `@generated`
+function. `res`, `prob`, `u`, and `data` are the names of the corresponding parameters in
+the generated function given as a `Symbol` or `Expr`.
 """
 function _gen_monitor_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P, PNAME}},
                                 res, prob, u, data) where {Z, M, MNAME, P, PNAME}

@@ -2,7 +2,6 @@ module NumericalContinuation
 
 using ComponentArrays: ComponentVector, labels
 using Accessors: @optic
-using DocStringExtensions: SIGNATURES, TYPEDEF
 using TestItems: @testitem
 
 const RESERVED_NAMES = Set([:zero, :monitor])
