@@ -158,64 +158,72 @@ function _sub_problem_names!(names::Vector{Symbol}, prob::ContinuationProblem,
 end
 
 """
+    get_vars(prob)
+
+Return the number of variables defined in a problem.
+"""
+function get_vars(prob::ContinuationProblem)
+    return reduce(sum ∘ get_vars, prob.sub_problem; init = 0) +
+           get_vars(prob.zero_function!)
+end
+
+get_vars(zero) = zero.vars  # default fallback for zero functions
+
+"""
+    get_eqns(prob)
+
+Return the number of equations defined in a problem.
+"""
+function get_eqns(prob::ContinuationProblem)
+    return reduce(sum ∘ get_eqns, prob.sub_problem; init = 0) +
+           get_eqns(prob.zero_function!) +
+           length(prob.monitor_function)
+end
+
+get_eqns(zero) = zero.eqns  # default fallback for zero functions
+
+"""
+    get_initial_vars(prob)
+
+Return the initial values of the state vector as a (potentially nested) `NamedTuple`.
+"""
+function get_initial_vars(prob::ContinuationProblem)
+    u0 = [name => get_initial_vars(sub_prob)
+          for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
+    push!(u0, :zero => get_initial_vars(prob.zero_function!))
+    return NamedTuple(u0)
+end
+
+get_initial_vars(zero) = zero.u0  # default fallback for zero functions
+
+"""
     get_initial_data(prob)
 
-Return the inital values of the state vector `u0` and the chart data `data` as a `Tuple`.
-
-TODO: replace this with an in-place version? It would save allocations (minor) here and
-shift the burden of types to the top level. (I.e., the top level ContinuationProblem would
-determine the type rather than relying on type promotion throughout all the lower level
-instances.)
+Return the initial values of the chart data as a (potentially nested) `NamedTuple`.
 """
 function get_initial_data(prob::ContinuationProblem)
-    (u0, data) = _get_initial_data(prob)
-    return (ComponentVector(u0), data)
+    data = [name => get_initial_data(sub_prob)
+            for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
+    push!(data, :zero => get_initial_data(prob.zero_function!))
+    for (name, monitor) in zip(prob.monitor_function_name, prob.monitor_function)
+        push!(data, name => get_initial_data(monitor))
+    end
+    return NamedTuple(data)
 end
 
-function _get_initial_data(prob::ContinuationProblem)
-    u0 = []
-    data = []
-    for i in eachindex(prob.sub_problem_name)
-        name = prob.sub_problem_name[i]
-        (_u0, _data) = _get_initial_data(prob.sub_problem[i])
-        push!(u0, name => _u0)
-        push!(data, name => _data)
-    end
-    (_u0, _data) = get_initial_data(prob.zero_function!)
-    push!(u0, :zero => _u0)
-    push!(data, :zero => _data)
-    for i in eachindex(prob.monitor_function_name)
-        name = prob.monitor_function_name[i]
-        # TODO: decide if monitor functions can introduce new state variables
-        _data = get_initial_data(prob.monitor_function[i])
-        push!(data, name => _data)
-    end
-    return (NamedTuple(u0), NamedTuple(data))
-end
+get_initial_data(zero) = nothing  # default fallback for zero and monitor functions
 
-get_initial_data(monitor_function) = nothing  # fall back for monitor functions
+"""
+    get_initial_residual(prob)
 
-function get_residual_vector(prob::ContinuationProblem, u0, data)
-    (res_zero, res_monitor) = _get_residual_vector(prob, u0, data)
-    return ComponentVector(zero = res_zero, monitor = res_monitor)
-end
-
-function _get_residual_vector(prob::ContinuationProblem, u0, data)
-    # TODO: Might want to specialise this on ContinuationFunction if used repeatedly?
-    res_zero_vec = []
-    res_monitor_vec = []
-    for i in eachindex(prob.sub_problem_name)
-        name = prob.sub_problem_name[i]
-        (_res_zero_vec, _res_monitor_vec) = _get_residual_vector(prob.sub_problem[i],
-                                                                 u0[name], data[name])
-        push!(res_zero_vec, name => _res_zero_vec)
-        push!(res_monitor_vec, name => _res_monitor_vec)
-    end
-    _res_zero_vec = get_residual_vector(prob.zero_function!, u0, data)
-    _res_monitor_vec = zeros(eltype(u0), length(prob.monitor_function_name))
-    push!(res_zero_vec, :zero => _res_zero_vec)
-    push!(res_monitor_vec, :monitor => _res_monitor_vec)
-    return (NamedTuple(res_zero_vec), NamedTuple(res_monitor_vec))
+Return a (potentially nested) `NamedTuple` of zeros in the required shape.
+"""
+function get_initial_residual(prob)
+    res = [name => get_initial_residual(sub_prob)
+           for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
+    push!(res, :zero => falses(get_eqns(prob.zero_function!)))
+    push!(res, :monitor => falses(length(prob.monitor_function)))
+    return NamedTuple(res)
 end
 
 struct SimpleMonitorFunction{F}
@@ -224,6 +232,11 @@ end
 
 (monitor::SimpleMonitorFunction)(u, data; parent) = monitor.f(u)
 
+"""
+    monitor_function(f)
+
+Wrap a function of the form `f(u)` in a monitor function compatible form.
+"""
 monitor_function(f) = SimpleMonitorFunction(f)
 
 """
@@ -291,30 +304,6 @@ function add_parameter!(prob::ContinuationProblem, names)
 end
 
 """
-    add_parameter_p0!(prob, p0)
-
-Add parameters to a `ContinuationProblem` from a user-supplied parameter list. If `p0` is a
-`ComponentVector` or a `NamedTuple`, the names will be extracted and used. Otherwise, they
-will be labelled `p1` to `pn`, where `n` is the total number of parameters.
-"""
-function add_parameter_p0!(prob::ContinuationProblem, p0)
-    # Try to extract parameter names
-    if p0 isa NamedTuple
-        _p0 = ComponentVector(p0)
-    else
-        _p0 = p0
-    end
-    if _p0 isa ComponentVector
-        for (i, name) in enumerate(labels(_p0))
-            add_parameter!(prob, Symbol(name), @optic _.p[i])
-        end
-    else
-        add_parameter!(prob, 1:length(p0))
-    end
-    return prob
-end
-
-"""
     IIPWrapper
 
 A function wrapper to ensure that out-of-place functions are wrapped as is-in-place
@@ -341,7 +330,7 @@ end
 
 Returns true if the wrapper function is-in-place or false if it is out-of-place.
 """
-is_iip(::IIPWrapper{IIP}) where IIP = IIP
+is_iip(::IIPWrapper{IIP}) where {IIP} = IIP
 
 (func::IIPWrapper{false})(res, args...; kwargs...) = (res .= func.f(args...; kwargs...))
 (func::IIPWrapper{true})(res, args...; kwargs...) = func.f(res, args...; kwargs...)

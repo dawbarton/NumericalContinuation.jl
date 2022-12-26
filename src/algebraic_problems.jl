@@ -1,29 +1,28 @@
 export algebraic_problem
 
-struct AlgebraicProblem{F}
-    f::F
+struct AlgebraicProblem
+    f::Any
     u0::Any
-    dim::Int
-    function AlgebraicProblem(f, u, p=(;), dim=missing)
+    vars::Int
+    eqns::Int
+    function AlgebraicProblem(f, u, p=(;), eqns=missing)
         # If needed, call the function to see how many outputs it returns
-        _dim = ismissing(dim) ? length(f(u, p)) : dim
+        _eqns = ismissing(eqns) ? length(f(u, p)) : eqns
+        vars = length(u) + length(p)
         # Empty values for ComponentArrays can only be NamedTuples
         _u = isempty(u) ? (;) : u
         _p = isempty(p) ? (;) : p
         # Ensure that the function has an in-place form
         _f = IIPWrapper(f)
-        return new{typeof(_f)}(_f, ComponentVector((u = _u, p = _p)), _dim)
+        return new(_f, (u = _u, p = _p), vars, _eqns)
     end
 end
 
 (alg::AlgebraicProblem)(res, u, data; parent) = alg.f(res, u.u, u.p)
 
-get_initial_data(alg::AlgebraicProblem) = (alg.u0, nothing)
-get_residual_vector(alg::AlgebraicProblem, u0, ::Any) = zeros(eltype(u0), alg.dim)
-
 function algebraic_problem(f, u, p=(;), dim=missing)
     prob = ContinuationProblem(AlgebraicProblem(f, u, p, dim))
-    return add_parameter_p0!(prob, p)
+    return add_parameter!(prob, keys(p))
 end
 
 @testitem "Algebraic problems" begin
