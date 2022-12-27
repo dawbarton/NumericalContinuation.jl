@@ -30,23 +30,33 @@ end
         # Problem 1 (example from COCO book)
         _u0 = T[1.0, 1.0, 0.5]
         prob = algebraic_problem((u, p) -> [u[1]^2 + (u[2] - 1)^2 - 1], _u0)
-        add_monitor_function!(prob, :ψ₁, monitor_function(u -> sqrt(u[1]^2 + u[2]^2)))
-        add_monitor_function!(prob, :ψ₂, monitor_function(u -> u[1]))
-        add_monitor_function!(prob, :ψ₃, monitor_function(u -> u[3] - u[1] + 0.5))
+        add_monitor_function!(prob, :ψ₁, monitor_function((u, p) -> sqrt(u[1]^2 + u[2]^2)))
+        add_monitor_function!(prob, :ψ₂, monitor_function((u, p) -> u[1]))
+        add_monitor_function!(prob, :ψ₃, monitor_function((u, p) -> u[3] - u[1] + 0.5))
         @test monitor_function_name(prob) == [:ψ₁, :ψ₂, :ψ₃]
         @test isempty(sub_problem_name(prob))
-        (u0, data) = NumericalContinuation.get_initial_data(prob)
-        @test (collect(u0) == _u0) && (eltype(u0) == eltype(_u0))
-        res = NumericalContinuation.get_residual_vector(prob, u0, data)
-        @test (length(res) == 4) && (eltype(res) == eltype(_u0))
+        u0 = NumericalContinuation.get_initial_vars(prob)
+        data = NumericalContinuation.get_initial_data(prob)
+        @test (collect(Iterators.flatten(Iterators.flatten(u0))) == _u0)
+        res_layout = NumericalContinuation.get_initial_residual_layout(prob)
+        @test (length(collect(Iterators.flatten(res_layout))) == 4)
+
         func = NumericalContinuation.ContinuationFunction(prob)
-        monitor = zeros(length(monitor_function_name(prob)))
+        monitor = zeros(T, length(monitor_function_name(prob)))
+        res = ComponentVector{T}(res_layout)
+        # Test with NamedTuple
         NumericalContinuation.eval_monitor_function!(monitor, func, u0, data)
         @test monitor ≈ [sqrt(2), 1.0, 0.0]
-        res .= one(eltype(res))
         NumericalContinuation.eval_function!(res, func, u0, data, Set(Int[]), monitor)
         @test res ≈ [0, 0, 0, 0]
-        u0_ext = [u0; ComponentVector(monitor=[0])]
+        # Test with ComponentArray
+        u0_cmp = ComponentVector{T}(u0)
+        NumericalContinuation.eval_monitor_function!(monitor, func, u0_cmp, data)
+        @test monitor ≈ [sqrt(2), 1.0, 0.0]
+        NumericalContinuation.eval_function!(res, func, u0_cmp, data, Set(Int[]), monitor)
+        @test res ≈ [0, 0, 0, 0]
+        # Test with monitor function active
+        u0_ext = (; u0..., monitor=[0])
         NumericalContinuation.eval_function!(res, func, u0_ext, data, Set([1]), monitor)
         @test res ≈ [0, sqrt(2), 0, 0]
     end

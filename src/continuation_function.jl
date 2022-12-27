@@ -84,11 +84,15 @@ end
 
 @generated function eval_function!(res, prob::ContinuationFunction, u, data, active,
                                    monitor)
+    return _eval_function!(res, prob, u, data, active, monitor)
+end
+
+function _eval_function!(res, prob, u, data, active, monitor)
     result = quote
         j = 0
     end
-    _gen_zero_function!(result.args, prob, :(res.zero), :prob, :u, :data)
-    allmonitor_function = _gen_monitor_function!([], prob, :(res.monitor), :prob, :u, :data)
+    _gen_zero_function!(result.args, prob, :res, :prob, :u, :data)
+    allmonitor_function = _gen_monitor_function!([], prob, :prob, :u, :data)
     for (i, monitor_function) in enumerate(allmonitor_function)
         push!(result.args,
               :(monitor_val = $i in active ? u.monitor[j += 1] : monitor[$i])) # could replace with ifelse and get (with default value)
@@ -99,9 +103,14 @@ end
     return result
 end
 
+function _eval_function!(res, prob::ContinuationFunction, u, data, active, monitor)
+    return _eval_function!(typeof(res), typeof(prob), typeof(u), typeof(data),
+                           typeof(active), typeof(monitor))
+end
+
 @generated function eval_monitor_function!(res, prob::ContinuationFunction, u, data)
     result = quote end
-    allmonitor_function = _gen_monitor_function!([], prob, :(res.monitor), :prob, :u, :data)
+    allmonitor_function = _gen_monitor_function!([], prob, :prob, :u, :data)
     for (i, monitor_function) in enumerate(allmonitor_function)
         push!(result.args, :(res[$i] = $monitor_function))
     end
@@ -144,11 +153,11 @@ function. `res`, `prob`, `u`, and `data` are the names of the corresponding para
 the generated function given as a `Symbol` or `Expr`.
 """
 function _gen_monitor_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P, PNAME}},
-                                res, prob, u, data) where {Z, M, MNAME, P, PNAME}
+                                prob, u, data) where {Z, M, MNAME, P, PNAME}
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
-        _gen_monitor_function!(result, P.parameters[i], :($res.$name),
-                               :($prob.sub_problem[$i]), :($u.$name), :($data.$name))
+        _gen_monitor_function!(result, P.parameters[i], :($prob.sub_problem[$i]),
+                               :($u.$name), :($data.$name))
     end
     for i in Base.OneTo(length(M.parameters))
         name = MNAME.parameters[i]

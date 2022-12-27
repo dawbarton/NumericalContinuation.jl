@@ -218,26 +218,29 @@ get_initial_data(zero) = nothing  # default fallback for zero and monitor functi
 
 Return a (potentially nested) `NamedTuple` of zeros in the required shape.
 """
-function get_initial_residual(prob)
-    res = [name => get_initial_residual(sub_prob)
+function get_initial_residual_layout(prob)
+    res = [name => get_initial_residual_layout(sub_prob)
            for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
     push!(res, :zero => falses(get_eqns(prob.zero_function!)))
     push!(res, :monitor => falses(length(prob.monitor_function)))
     return NamedTuple(res)
 end
 
-struct SimpleMonitorFunction{F}
+struct SimpleMonitorFunction{P, F}
     f::F
+    SimpleMonitorFunction(f, pars) = new{pars, typeof(f)}(f)
 end
 
-(monitor::SimpleMonitorFunction)(u, data; parent) = monitor.f(u)
+(monitor::SimpleMonitorFunction{false})(u, data; parent) = monitor.f(u)
+(monitor::SimpleMonitorFunction{true})(u, data; parent) = monitor.f(u.u, u.p)
 
 """
-    monitor_function(f)
+    monitor_function(f, pars = true)
 
-Wrap a function of the form `f(u)` in a monitor function compatible form.
+Wrap a function of the form `f(u, p)` (if `pars` is `true`) or `f(u)` (if `pars` is `false`)
+in a monitor function compatible form.
 """
-monitor_function(f) = SimpleMonitorFunction(f)
+monitor_function(f, pars = true) = SimpleMonitorFunction(f, pars)
 
 """
     ContinuationParameter(name, lens)
