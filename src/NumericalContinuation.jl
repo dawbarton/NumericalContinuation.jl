@@ -1,5 +1,6 @@
 module NumericalContinuation
 
+using LinearAlgebra
 using ComponentArrays: ComponentVector, labels
 using Accessors: @optic
 using TestItems: @testitem
