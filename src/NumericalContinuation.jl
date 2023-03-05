@@ -10,6 +10,7 @@ const RESERVED_NAMES = Set([:zero, :monitor])
 include("continuation_problem.jl")
 include("continuation_function.jl")
 include("algebraic_problems.jl")
+include("boundary_value_problems.jl")
 
 # prob = zero_problem(u -> [u.x^2 + u.y^2 - 1]; u0=ComponentArray(x=1.0, y=0.0))
 # prob = zero_problem(u -> [u[1]^2 + u[2]^2 - 1]; u0=[1.0, 0.0])

@@ -309,10 +309,16 @@ end
 
 IIPWrapper(f::IIPWrapper) = f
 
-function IIPWrapper(f)
+"""
+    IIPWrapper(f, [n=2])
+
+Provide a wrapper to generate in-place versions of a function. `n` is the number of expected
+arguments for a non-inplace version. (E.g., `f(u, p)` gives `n=2`.)
+"""
+function IIPWrapper(f, n=2)
     # Try to determine if the problem is in place or not
     for method in methods(f)
-        if method.nargs == 4  # (res, u, p) + 1
+        if method.nargs == n+2
             return IIPWrapper{true, typeof(f)}(f)
         end
     end

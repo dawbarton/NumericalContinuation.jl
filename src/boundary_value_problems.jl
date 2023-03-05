@@ -44,7 +44,7 @@ struct FourierCollocation{F, T}
         length(tspan) == 2 || throw(ArgumentError("tspan must contain two values"))
         # If needed, call the function to see how many outputs it returns
         ndim = ismissing(eqns) ? length(f(u[:, begin], p, tspan[begin])) : eqns
-        _f = IIPWrapper(f)  # Ensure that the function has an in-place form
+        _f = IIPWrapper(f, 3)  # Ensure that the function has an in-place form
         T = eltype(u)
         nmesh = size(u, 2)
         Dt = fourier_diff(T, nmesh) .* -2π  # Scale to [0, 1] and transpose
@@ -52,7 +52,7 @@ struct FourierCollocation{F, T}
         _eqns = nmesh * ndim
         return new{typeof(_f), T}(_f,
                                   (u = vec(u), p = p, tspan = (tspan[begin], tspan[end])),
-                                  _vars, _eqns, ndim, nmesh, Dt, zeros(T, nmesh))
+                                  _vars, _eqns, ndim, nmesh, Dt)
     end
 end
 
@@ -74,4 +74,15 @@ end
 function fourier_collocation(f, u, tspan, p = (), eqns = missing)
     prob = ContinuationProblem(FourierCollocation(f, u, tspan, p, eqns))
     return add_parameters!(prob, :p, keys(p))
+end
+
+@testitem "Fourier collocation" begin
+    function hopf(u, p, t)
+        ss = u[1]^2 + u[2]^2
+        return [p[1]*u[1] - u[2] + p[2]*u[1]*ss,
+                u[1] + p[1]*u[2] + p[2]*u[2]*ss]
+    end
+    p0 = [1.0, -1.0]
+    t = range(0, 2π, length=21)[1:end-1]
+    u0 = [sqrt(p0[1]).*cos.(t) sqrt(p0[1]).*sin.(t)]'
 end
