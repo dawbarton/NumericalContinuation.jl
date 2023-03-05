@@ -5,7 +5,7 @@ struct AlgebraicProblem
     u0::Any
     vars::Int
     eqns::Int
-    function AlgebraicProblem(f, u, p=(;), eqns=missing)
+    function AlgebraicProblem(f, u, p = (;), eqns = missing)
         # If needed, call the function to see how many outputs it returns
         _eqns = ismissing(eqns) ? length(f(u, p)) : eqns
         vars = length(u) + length(p)
@@ -20,13 +20,13 @@ end
 
 (alg::AlgebraicProblem)(res, u, data; parent) = alg.f(res, u.u, u.p)
 
-function algebraic_problem(f, u, p=(;), dim=missing)
+function algebraic_problem(f, u, p = (;), dim = missing)
     prob = ContinuationProblem(AlgebraicProblem(f, u, p, dim))
     return add_parameters!(prob, :p, keys(p))
 end
 
 @testitem "Algebraic problems" begin
-    function alg_problem1(::Type{T}) where T
+    function alg_problem1(::Type{T}) where {T}
         # Problem 1 (example from COCO book)
         _u0 = T[1.0, 1.0, 0.5]
         prob = algebraic_problem((u, p) -> [u[1]^2 + (u[2] - 1)^2 - 1], _u0)
@@ -56,16 +56,16 @@ end
         NumericalContinuation.eval_function!(res, func, u0_cmp, data, Set(Int[]), monitor)
         @test res ≈ [0, 0, 0, 0]
         # Test with monitor function active
-        u0_ext = (; u0..., monitor=[0])
+        u0_ext = (; u0..., monitor = [0])
         NumericalContinuation.eval_function!(res, func, u0_ext, data, Set([1]), monitor)
         @test res ≈ [0, sqrt(2), 0, 0]
     end
     alg_problem1(Float64)
     alg_problem1(Float32)
 
-    function alg_problem2(::Type{T}) where T
+    function alg_problem2(::Type{T}) where {T}
         # Problem 1 (example from COCO book) with u[2] := p[1], u[3] := p[2]
-        _u0 = T[1.0];
+        _u0 = T[1.0]
         _p0 = T[1.0, 0.5]
         prob = algebraic_problem((u, p) -> [u[1]^2 + (p[1] - 1)^2 - 1], _u0, _p0)
         add_monitor_function!(prob, :ψ₁, monitor_function((u, p) -> sqrt(u[1]^2 + p[1]^2)))
@@ -94,11 +94,10 @@ end
         NumericalContinuation.eval_function!(res, func, u0_cmp, data, Set(Int[]), monitor)
         @test res ≈ [0, 0, 0, 0, 0, 0]
         # Test with monitor function active
-        u0_ext = (; u0..., monitor=[0])
+        u0_ext = (; u0..., monitor = [0])
         NumericalContinuation.eval_function!(res, func, u0_ext, data, Set([3]), monitor)
         @test res ≈ [0, 0, 0, sqrt(2), 0, 0]
     end
     alg_problem2(Float64)
     alg_problem2(Float32)
-
 end
