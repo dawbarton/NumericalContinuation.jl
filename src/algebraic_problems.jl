@@ -20,8 +20,8 @@ end
 
 (alg::AlgebraicProblem)(res, u, data; parent) = alg.f(res, u.u, u.p)
 
-function algebraic_problem(f, u, p = (;), dim = missing)
-    prob = ContinuationProblem(AlgebraicProblem(f, u, p, dim))
+function algebraic_problem(f, u, p = (;), eqns = missing)
+    prob = ContinuationProblem(AlgebraicProblem(f, u, p, eqns))
     return add_parameters!(prob, :p, keys(p))
 end
 
