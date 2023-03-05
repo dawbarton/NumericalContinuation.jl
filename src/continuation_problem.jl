@@ -256,26 +256,27 @@ ContinuationParameter(:mypar, @optic)
 
 Also see: [`add_parameter!`](@ref)
 """
-struct ContinuationParameter{L}
+struct ContinuationParameter{F}
     name::Symbol
-    lens::L
+    func::F
 end
 
 function (cpar::ContinuationParameter)(u, data; parent)
-    return cpar.lens(u)
+    return cpar.func(u)
 end
 
 """
-    add_parameter!(prob, name, lens)
-    add_parameter!(prob, name, idx)
-    add_parameter!(prob, named_par)
-    add_parameter!(prob, names)
+    add_parameter!(prob, name, func)
 
-Add a continuation parameter to a continuation problem. Parameters should be specified as
-`:name=>index` pairs; if only names are provided, the index is taken from the position in
-the vector.
+Add a continuation parameter `name` to a continuation problem. Parameters should be
+specified as function that maps the state vector to the parameter position.
 
-TODO: add examples
+# Examples
+
+```julia
+add_parameter!(prob, :α, Base.Fix2(getindex, 7))  # parameter α corresponds to u[7]
+add_parameter!(prob, :p, UserParameter(:p, 1))  # parameter p corresponds to u.p[1]
+```
 """
 function add_parameter! end
 
@@ -283,25 +284,15 @@ function add_parameter!(prob::ContinuationProblem, name::Symbol, lens)
     add_monitor_function!(prob, name, ContinuationParameter(name, lens))
 end
 
-function add_parameter!(prob::ContinuationProblem, name::Symbol, idx::Integer)
-    add_parameter!(prob, name, @optic _[idx])
+struct UserParameter
+    name::Symbol
+    idx::Int
 end
+(gp::UserParameter)(u) = getindex(getproperty(u, gp.name), gp.idx)
 
-function add_parameter!(prob::ContinuationProblem, named_par::Pair{Symbol})
-    add_parameter!(prob, named_par[1], named_par[2])
-end
-
-function add_parameter!(prob::ContinuationProblem, names)
-    for (i, name) in enumerate(names)
-        if name isa Symbol
-            add_parameter!(prob, name, i)
-        elseif name isa Integer
-            add_parameter!(prob, Symbol(:p, name), name)
-        elseif name isa Pair{Symbol}
-            add_parameter!(prob, name)
-        else
-            throw(ArgumentError("Parameters should be specified in the form `[:name=>index]`"))
-        end
+function add_parameters!(prob::ContinuationProblem, name::Symbol, indices)
+    for idx in indices
+        add_parameter!(prob, Symbol(name, idx), UserParameter(name, idx))
     end
     return prob
 end
