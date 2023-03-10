@@ -82,17 +82,17 @@ function ContinuationFunction(prob::ContinuationProblem)
                                 prob.sub_problem_name)
 end
 
-@generated function eval_function!(res, prob::ContinuationFunction, u, data, active,
+@generated function eval_function!(res, func::ContinuationFunction, u, data, active,
                                    monitor)
-    return _eval_function!(res, prob, u, data, active, monitor)
+    return _eval_function!(res, func, u, data, active, monitor)
 end
 
-function _eval_function!(res, prob, u, data, active, monitor)
+function _eval_function!(res, func, u, data, active, monitor)
     result = quote
         j = 0
     end
-    _gen_zero_function!(result.args, prob, :res, :prob, :u, :data)
-    allmonitor_function = _gen_monitor_function!([], prob, :prob, :u, :data)
+    _gen_zero_function!(result.args, func, :res, :func, :u, :data)
+    allmonitor_function = _gen_monitor_function!([], func, :func, :u, :data)
     for (i, monitor_function) in enumerate(allmonitor_function)
         push!(result.args,
               :(monitor_val = $i in active ? u.monitor[j += 1] : monitor[$i])) # could replace with ifelse and get (with default value)
@@ -103,14 +103,14 @@ function _eval_function!(res, prob, u, data, active, monitor)
     return result
 end
 
-function _eval_function!(res, prob::ContinuationFunction, u, data, active, monitor)
-    return _eval_function!(typeof(res), typeof(prob), typeof(u), typeof(data),
+function _eval_function!(res, func::ContinuationFunction, u, data, active, monitor)
+    return _eval_function!(typeof(res), typeof(func), typeof(u), typeof(data),
                            typeof(active), typeof(monitor))
 end
 
-@generated function eval_monitor_function!(res, prob::ContinuationFunction, u, data)
+@generated function eval_monitor_function!(res, func::ContinuationFunction, u, data)
     result = quote end
-    allmonitor_function = _gen_monitor_function!([], prob, :prob, :u, :data)
+    allmonitor_function = _gen_monitor_function!([], func, :func, :u, :data)
     for (i, monitor_function) in enumerate(allmonitor_function)
         push!(result.args, :(res[$i] = $monitor_function))
     end
@@ -119,7 +119,7 @@ end
 end
 
 """
-    _gen_zero_function!(result, ::ContinuationFunction, res, prob, u, data)
+    _gen_zero_function!(result, ::ContinuationFunction, res, func, u, data)
 
 INTERNAL ONLY
 
@@ -129,15 +129,15 @@ function. `res`, `prob`, `u`, and `data` are the names of the corresponding para
 the generated function given as a `Symbol` or `Expr`.
 """
 function _gen_zero_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P, PNAME}},
-                             res, prob, u, data) where {Z, M, MNAME, P, PNAME}
+                             res, func, u, data) where {Z, M, MNAME, P, PNAME}
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
         _gen_zero_function!(result, P.parameters[i], :($res.$name),
-                            :($prob.sub_problem[$i]), :($u.$name), :($data.$name))
+                            :($func.sub_problem[$i]), :($u.$name), :($data.$name))
     end
     if Z !== Nothing
         push!(result,
-              :($prob.zero_function!($res.zero, $u.zero, $data.zero; parent = ($u, $data))))
+              :($func.zero_function!($res.zero, $u.zero, $data.zero; parent = ($u, $data))))
     end
     return result
 end
@@ -149,20 +149,20 @@ INTERNAL ONLY
 
 Generate an expression tree to call each monitor function within a `ContinuationFunction`
 and its subproblems, acting in place. This function should be called from an `@generated`
-function. `res`, `prob`, `u`, and `data` are the names of the corresponding parameters in
+function. `res`, `func`, `u`, and `data` are the names of the corresponding parameters in
 the generated function given as a `Symbol` or `Expr`.
 """
 function _gen_monitor_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P, PNAME}},
-                                prob, u, data) where {Z, M, MNAME, P, PNAME}
+                                func, u, data) where {Z, M, MNAME, P, PNAME}
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
-        _gen_monitor_function!(result, P.parameters[i], :($prob.sub_problem[$i]),
+        _gen_monitor_function!(result, P.parameters[i], :($func.sub_problem[$i]),
                                :($u.$name), :($data.$name))
     end
     for i in Base.OneTo(length(M.parameters))
         name = MNAME.parameters[i]
         push!(result,
-              :($prob.monitor_function[$i]($u.zero, $data.$name; parent = ($u, $data))))
+              :($func.monitor_function[$i]($u.zero, $data.$name; parent = ($u, $data))))
     end
     return result
 end
