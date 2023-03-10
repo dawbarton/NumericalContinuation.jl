@@ -51,23 +51,26 @@ struct FourierCollocation{F, T}
         _vars = nmesh * ndim + length(p) + 2
         _eqns = nmesh * ndim
         return new{typeof(_f), T}(_f,
-                                  (u = vec(u), p = p, tspan = (tspan[begin], tspan[end])),
+                                  (u = vec(u), p = p, tspan = [tspan[begin], tspan[end]]),
                                   _vars, _eqns, ndim, nmesh, Dt)
     end
 end
 
 function (fourier::FourierCollocation)(res, u, data; parent)
-    u_mat = reshape(u.u, (fourier.ndim, fourier.nmesh))
-    res_mat = reshape(res, (fourier.ndim, fourier.nmesh))
+    # TODO: work out if there are any allocations left in here
     # Calculate the right-hand side
     T = u.tspan[end] - u.tspan[begin]
     t = range(u.tspan[begin], u.tspan[end], fourier.nmesh + 1)  # plus one because the final time value is not stored in the state vector (Fourier assumes periodicity)
-    for i in Base.OneTo(fourier.nmesh)
-        fourier.f(@view(res_mat[:, i]), @view(u_mat[:, i]), u.p, t[i])
-        res_mat[:, i] .*= T
+    idx = 1:(fourier.ndim)
+    for i in 1:(fourier.nmesh)
+        fourier.f(view(res, idx), view(u.u, idx), u.p, t[i])
+        @views res[idx] .*= T
+        idx = idx .+ fourier.ndim
     end
     # Compute the difference of the time derivatives using a Fourier differentiation matrix
-    mul!(res_mat, u_mat, fourier.Dt, -1, 1)
+    u_mat = reshape(u.u, (fourier.ndim, fourier.nmesh))
+    res_mat = reshape(res, (fourier.ndim, fourier.nmesh))
+    mul!(res_mat, u_mat, fourier.Dt, -1.0, 1.0)
     return res
 end
 
@@ -77,12 +80,22 @@ function fourier_collocation(f, u, tspan, p = (), eqns = missing)
 end
 
 @testitem "Fourier collocation" begin
-    function hopf(u, p, t)
+    function hopf!(res, u, p, t)
         ss = u[1]^2 + u[2]^2
-        return [p[1]*u[1] - u[2] + p[2]*u[1]*ss,
-                u[1] + p[1]*u[2] + p[2]*u[2]*ss]
+        res[1] = p[1] * u[1] - u[2] + p[2] * u[1] * ss
+        res[2] = u[1] + p[1] * u[2] + p[2] * u[2] * ss
+        return res
     end
     p0 = [1.0, -1.0]
-    t = range(0, 2π, length=21)[1:end-1]
-    u0 = [sqrt(p0[1]).*cos.(t) sqrt(p0[1]).*sin.(t)]'
+    t = range(0, 2π, length = 21)[1:(end - 1)]
+    u0 = [sqrt(p0[1]) .* cos.(t) sqrt(p0[1]) .* sin.(t)]'
+    prob = NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0, 2)
+    func = NumericalContinuation.ContinuationFunction(prob)
+    uu = NumericalContinuation.get_initial_vars(prob)
+    data = NumericalContinuation.get_initial_data(prob)
+    monitor = zeros(Float64, length(monitor_function_name(prob)))
+    NumericalContinuation.eval_monitor_function!(monitor, func, uu, data)
+    res_layout = NumericalContinuation.get_initial_residual_layout(prob)
+    res = ComponentVector{Float64}(res_layout)
+    NumericalContinuation.eval_function!(res, func, uu, data, [], monitor)
 end
