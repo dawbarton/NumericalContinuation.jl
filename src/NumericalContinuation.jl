@@ -1,8 +1,8 @@
 module NumericalContinuation
 
 using LinearAlgebra
-using ComponentArrays: ComponentVector, labels
-using Accessors: @optic
+using ComponentArrays: ComponentVector
+using Accessors: @optic, opcompose, PropertyLens, IndexLens
 using TestItems: @testitem
 
 const RESERVED_NAMES = Set([:zero, :monitor])

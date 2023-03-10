@@ -284,15 +284,10 @@ function add_parameter!(prob::ContinuationProblem, name::Symbol, lens)
     add_monitor_function!(prob, name, ContinuationParameter(name, lens))
 end
 
-struct UserParameter
-    name::Symbol
-    idx::Int
-end
-(gp::UserParameter)(u) = getindex(getproperty(u, gp.name), gp.idx)
-
 function add_parameters!(prob::ContinuationProblem, name::Symbol, indices)
     for idx in indices
-        add_parameter!(prob, Symbol(name, idx), UserParameter(name, idx))
+        add_parameter!(prob, Symbol(name, idx),
+                       opcompose(PropertyLens(name), IndexLens(idx)))
     end
     return prob
 end
@@ -315,10 +310,10 @@ IIPWrapper(f::IIPWrapper) = f
 Provide a wrapper to generate in-place versions of a function. `n` is the number of expected
 arguments for a non-inplace version. (E.g., `f(u, p)` gives `n=2`.)
 """
-function IIPWrapper(f, n=2)
+function IIPWrapper(f, n = 2)
     # Try to determine if the problem is in place or not
     for method in methods(f)
-        if method.nargs == n+2
+        if method.nargs == n + 2
             return IIPWrapper{true, typeof(f)}(f)
         end
     end
