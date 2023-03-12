@@ -183,86 +183,104 @@ end
 get_eqns(zero) = zero.eqns  # default fallback for zero functions
 
 """
-    get_initial_vars(prob)
+    get_initial(prob)
 
-Return the initial values of the state vector as a (potentially nested) `NamedTuple`.
+Return a tuple of the initial values of the state vector, and chart data, as (potentially
+nested) `NamedTuple`s.
 """
-function get_initial_vars(prob::ContinuationProblem)
-    u0 = [name => get_initial_vars(sub_prob)
-          for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
-    push!(u0, :zero => get_initial_vars(prob.zero_function!))
-    return NamedTuple(u0)
-end
-
-get_initial_vars(zero) = zero.u0  # default fallback for zero functions
-
-"""
-    get_initial_data(prob)
-
-Return the initial values of the chart data as a (potentially nested) `NamedTuple`.
-"""
-function get_initial_data(prob::ContinuationProblem)
-    data = [name => get_initial_data(sub_prob)
-            for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
-    push!(data, :zero => get_initial_data(prob.zero_function!))
-    for (name, monitor) in zip(prob.monitor_function_name, prob.monitor_function)
-        push!(data, name => get_initial_data(monitor))
+function get_initial(prob::ContinuationProblem)
+    u = Pair{Symbol, Any}[]
+    data = Pair{Symbol, Any}[]
+    # Sub-problems
+    for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)
+        (_u, _data) = get_initial(sub_prob)
+        push!(u, name => _u)
+        push!(data, name => _data)
     end
-    return NamedTuple(data)
+    # Zero problem
+    (_u, _data) = get_initial(prob, prob.zero_function!)
+    push!(u, :zero => _u)
+    push!(data, :zero => _data)
+    # Monitor functions
+    for (name, monitor_function) in zip(prob.monitor_function_name, prob.monitor_function)
+        push!(data, name => get_initial(prob, monitor_function, name))
+    end
+    return (NamedTuple(u), NamedTuple(data))
 end
 
-get_initial_data(zero) = nothing  # default fallback for zero and monitor functions
+# TODO: Replace this with a traits-based approach for getting u0 and data? That way could get data if available
+get_initial(::ContinuationProblem, zero) = (zero.u0, ())  # default fallback for zero problems
+get_initial(::ContinuationProblem, monitor, name) = ()  # default fallback for monitor functions
 
 """
     get_initial_residual(prob)
 
-Return a (potentially nested) `NamedTuple` of zeros in the required shape.
+Return a (potentially nested) `NamedTuple` of zeros in the required shape for the residual.
 """
-function get_initial_residual_layout(prob)
-    res = [name => get_initial_residual_layout(sub_prob)
+function get_initial_residual_layout(prob::ContinuationProblem)
+    res = Any[name => get_initial_residual_layout(sub_prob)
            for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
     push!(res, :zero => falses(get_eqns(prob.zero_function!)))
     push!(res, :monitor => falses(length(prob.monitor_function)))
     return NamedTuple(res)
 end
 
-struct SimpleMonitorFunction{P, F}
-    f::F
-    SimpleMonitorFunction(f, pars) = new{pars, typeof(f)}(f)
+"""
+    get_initial_monitor(prob, u, data)
+
+Return a tuple of the initial values of the monitor functions, and whether they are active
+or not, as (potentially nested) `NamedTuple`s.
+"""
+function get_initial_monitor(prob::ContinuationProblem, u, data)
+    monitor = Pair{Symbol, Any}[]
+    active = Pair{Symbol, Bool}[]
+    # Sub-problems
+    for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)
+        (_monitor, _active) = get_initial_monitor(sub_prob, getproperty(u, name),
+                                                  getproperty(data, name))
+        push!(monitor, name => _monitor)
+        push!(active, name => _active)
+    end
+    # Monitor functions
+    for (name, monitor_function) in zip(prob.monitor_function_name, prob.monitor_function)
+        (_monitor, _active) = get_initial_monitor(prob, monitor_function, name, u, data)
+        push!(monitor, name => _monitor)
+        push!(active, name => _active)
+    end
+    return (NamedTuple(monitor), NamedTuple(active))
 end
 
-(monitor::SimpleMonitorFunction{false})(u, data; parent) = monitor.f(u)
-(monitor::SimpleMonitorFunction{true})(u, data; parent) = monitor.f(u.u, u.p)
+function get_initial_monitor(::ContinuationProblem, monitor_function, name, u, data)
+    # Default fallback for monitor functions that follow the MonitorFunction interface
+    if monitor_function.initial_value !== nothing
+        value = monitor_function.initial_value
+    else
+        # Call the monitor function to get its initial value
+        value = monitor_function(u.zero, getproperty(data, name); parent = (u, data),
+                                 chart = nothing)
+    end
+    return (value, monitor_function.initial_active)
+end
+
+struct MonitorFunction{P, F}
+    f::F
+    initial_value::Any
+    initial_active::Bool
+    MonitorFunction(f, value, active, pars) = new{pars, typeof(f)}(f, value, active)
+end
+
+(monitor::MonitorFunction{false})(u, data; kwargs...) = monitor.f(u)
+(monitor::MonitorFunction{true})(u, data; kwargs...) = monitor.f(u.u, u.p)
 
 """
-    monitor_function(f, pars = true)
+    monitor_function(f; value = nothing, active = false, pars = true)
 
 Wrap a function of the form `f(u, p)` (if `pars` is `true`) or `f(u)` (if `pars` is `false`)
-in a monitor function compatible form.
+in a monitor function compatible form. The initial value of the monitor function may be
+provided in `value` and whether the monitor function is active is determined by `active`.
 """
-monitor_function(f, pars = true) = SimpleMonitorFunction(f, pars)
-
-"""
-    ContinuationParameter(name, lens)
-
-Create a continuation parameter for use as a monitor function. The reference to a parameter
-is stored as a lens (see Accessors.jl) meaning that arbitrary references are possible.
-
-# Example
-
-```julia
-ContinuationParameter(:mypar, @optic)
-```
-
-Also see: [`add_parameter!`](@ref)
-"""
-struct ContinuationParameter{F}
-    name::Symbol
-    func::F
-end
-
-function (cpar::ContinuationParameter)(u, data; parent)
-    return cpar.func(u)
+function monitor_function(f; value = nothing, active = false, pars = false)
+    MonitorFunction(f, value, active, pars)
 end
 
 """
@@ -274,20 +292,20 @@ specified as function that maps the state vector to the parameter position.
 # Examples
 
 ```julia
-add_parameter!(prob, :α, Base.Fix2(getindex, 7))  # parameter α corresponds to u[7]
-add_parameter!(prob, :p, UserParameter(:p, 1))  # parameter p corresponds to u.p[1]
+add_parameter!(prob, :α, @optic(_[7]))  # parameter α corresponds to u[7]
+add_parameter!(prob, :p, @optic(_.p[1]))  # parameter p corresponds to u.p[1]
 ```
 """
 function add_parameter! end
 
-function add_parameter!(prob::ContinuationProblem, name::Symbol, lens)
-    add_monitor_function!(prob, name, ContinuationParameter(name, lens))
+function add_parameter!(prob::ContinuationProblem, name::Symbol, lens; active = false)
+    add_monitor_function!(prob, name, monitor_function(lens; active = active, pars = false))
 end
 
-function add_parameters!(prob::ContinuationProblem, name::Symbol, indices)
+function add_parameters!(prob::ContinuationProblem, name::Symbol, indices; active = false)
     for idx in indices
         add_parameter!(prob, Symbol(name, idx),
-                       opcompose(PropertyLens(name), IndexLens(idx)))
+                       opcompose(PropertyLens(name), IndexLens(idx)); active = active)
     end
     return prob
 end

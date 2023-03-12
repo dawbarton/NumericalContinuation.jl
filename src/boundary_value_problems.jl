@@ -6,8 +6,6 @@ domain `x = LinRange{T}(0, 2π, N+1)[1:end-1]`.
 """
 function fourier_diff(T::Type{<:Number}, N::Integer; order = 1)
     D = zeros(T, N, N)
-    n1 = (N - 1) ÷ 2
-    n2 = N ÷ 2
     x = LinRange{T}(0, π, N + 1)
     if order == 1
         for i in 2:N
@@ -56,7 +54,7 @@ struct FourierCollocation{F, T}
     end
 end
 
-function (fourier::FourierCollocation)(res, u, data; parent)
+function (fourier::FourierCollocation)(res, u, data; kwargs...)
     # TODO: work out if there are any allocations left in here
     # Calculate the right-hand side
     T = u.tspan[end] - u.tspan[begin]
@@ -91,11 +89,11 @@ end
     u0 = [sqrt(p0[1]) .* cos.(t) sqrt(p0[1]) .* sin.(t)]'
     prob = NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0, 2)
     func = NumericalContinuation.ContinuationFunction(prob)
-    uu = NumericalContinuation.get_initial_vars(prob)
-    data = NumericalContinuation.get_initial_data(prob)
+    (uu, data) = NumericalContinuation.get_initial(prob)
     monitor = zeros(Float64, length(monitor_function_name(prob)))
-    NumericalContinuation.eval_monitor_function!(monitor, func, uu, data)
+    NumericalContinuation.eval_monitor_function!(monitor, func, uu, data, nothing)
     res_layout = NumericalContinuation.get_initial_residual_layout(prob)
     res = ComponentVector{Float64}(res_layout)
-    NumericalContinuation.eval_function!(res, func, uu, data, [], monitor)
+    NumericalContinuation.eval_function!(res, func, uu, data, nothing, [], monitor)
+    @test sqrt(sum(abs2.(res))) < 1e-12  # TODO: figure out how to use LinearAlgebra.norm in here
 end
