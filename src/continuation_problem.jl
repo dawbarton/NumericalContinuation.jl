@@ -197,7 +197,7 @@ function get_initial(prob::ContinuationProblem)
         push!(u, name => _u)
         push!(data, name => _data)
     end
-    # Zero problem
+    # Zero function
     (_u, _data) = get_initial(prob, prob.zero_function!)
     push!(u, :zero => _u)
     push!(data, :zero => _data)
@@ -208,8 +208,7 @@ function get_initial(prob::ContinuationProblem)
     return (NamedTuple(u), NamedTuple(data))
 end
 
-# TODO: Replace this with a traits-based approach for getting u0 and data? That way could get data if available
-get_initial(::ContinuationProblem, zero) = (zero.u0, ())  # default fallback for zero problems
+get_initial(::ContinuationProblem, zero) = (zero.u0, ())  # default fallback for zero function
 get_initial(::ContinuationProblem, monitor, name) = ()  # default fallback for monitor functions
 
 """
