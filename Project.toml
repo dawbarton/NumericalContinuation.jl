@@ -11,7 +11,7 @@ TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"
 
 [compat]
 Accessors = "0.1"
-Aqua = "0.5"
+Aqua = "0.6"
 ComponentArrays = "0.13"
 TestItemRunner = "0.2"
 TestItems = "0.1"
