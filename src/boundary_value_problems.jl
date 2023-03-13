@@ -78,22 +78,37 @@ function fourier_collocation(f, u, tspan, p = (), eqns = missing)
 end
 
 @testitem "Fourier collocation" begin
+    using LinearAlgebra: norm
+
     function hopf!(res, u, p, t)
         ss = u[1]^2 + u[2]^2
         res[1] = p[1] * u[1] - u[2] + p[2] * u[1] * ss
         res[2] = u[1] + p[1] * u[2] + p[2] * u[2] * ss
         return res
     end
+
+    # Define initial solution
     p0 = [1.0, -1.0]
     t = range(0, 2π, length = 21)[1:(end - 1)]
     u0 = [sqrt(p0[1]) .* cos.(t) sqrt(p0[1]) .* sin.(t)]'
     prob = NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0, 2)
-    func = NumericalContinuation.ContinuationFunction(prob)
-    (uu, data) = NumericalContinuation.get_initial(prob)
-    monitor = zeros(Float64, length(monitor_function_name(prob)))
-    NumericalContinuation.eval_monitor_function!(monitor, func, uu, data, nothing)
+
+    # Problem set up
+    (_u, data) = NumericalContinuation.get_initial(prob)
+    (_monitor, _active) = NumericalContinuation.get_initial_monitor(prob, _u, data)
     res_layout = NumericalContinuation.get_initial_residual_layout(prob)
+    chart = nothing
+
+    # Buffers
+    u = ComponentVector{Float64}(_u)
+    monitor = ComponentVector{Float64}(_monitor)
     res = ComponentVector{Float64}(res_layout)
-    NumericalContinuation.eval_function!(res, func, uu, data, nothing, [], monitor)
-    @test sqrt(sum(abs2.(res))) < 1e-12  # TODO: figure out how to use LinearAlgebra.norm in here
+    active = ComponentVector{Bool}(_active)
+
+    # Optimised code
+    func = NumericalContinuation.ContinuationFunction(prob)
+
+    # Evaluate
+    NumericalContinuation.eval_function!(res, func, u, data, chart, active, monitor)
+    @test norm(res) < 1e-12
 end

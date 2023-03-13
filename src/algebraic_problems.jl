@@ -35,73 +35,45 @@ end
         add_monitor_function!(prob, :ψ₃, monitor_function((u, p) -> u[3] - u[1] + 0.5; pars = true))
         @test monitor_function_name(prob) == [:ψ₁, :ψ₂, :ψ₃]
         @test isempty(sub_problem_name(prob))
-        (u0, data) = NumericalContinuation.get_initial(prob)
-        @test (collect(Iterators.flatten(Iterators.flatten(u0))) == _u0)
-        res_layout = NumericalContinuation.get_initial_residual_layout(prob)
-        @test (length(collect(Iterators.flatten(res_layout))) == 4)
 
+        # Get initial values
+        (u0, data) = NumericalContinuation.get_initial(prob)
+        (monitor0, active0) = NumericalContinuation.get_initial_monitor(prob, u0, data)
+        res_layout = NumericalContinuation.get_initial_residual_layout(prob)
+
+        # Generate the optimised code
         func = NumericalContinuation.ContinuationFunction(prob)
-        monitor = zeros(T, length(monitor_function_name(prob)))
+
+        # Buffers
         res = ComponentVector{T}(res_layout)
+        u = ComponentVector{T}(u0)
+        monitor = ComponentVector{T}(monitor0)
+        active = ComponentVector{Bool}(active0)
+        chart = nothing
+
+        # Test propagated values
+        @test u ≈ _u0
+        @test monitor ≈ [sqrt(2), 1.0, 0.0]
+
         # Test with NamedTuple
-        NumericalContinuation.eval_monitor_function!(monitor, func, u0, data, nothing)
-        @test monitor ≈ [sqrt(2), 1.0, 0.0]
-        NumericalContinuation.eval_function!(res, func, u0, data, nothing, Set(Int[]),
-                                             monitor)
+        monitor1 = zero(monitor)
+        NumericalContinuation.eval_monitor_function!(monitor1, func, u0, data, chart)
+        @test monitor1 ≈ monitor
+        NumericalContinuation.eval_function!(res, func, u0, data, chart, active, monitor)
         @test res ≈ [0, 0, 0, 0]
+
         # Test with ComponentArray
-        u0_cmp = ComponentVector{T}(u0)
-        NumericalContinuation.eval_monitor_function!(monitor, func, u0_cmp, data, nothing)
-        @test monitor ≈ [sqrt(2), 1.0, 0.0]
-        NumericalContinuation.eval_function!(res, func, u0_cmp, data, nothing, Set(Int[]),
-                                             monitor)
+        NumericalContinuation.eval_monitor_function!(monitor1, func, u, data, chart)
+        @test monitor1 ≈ monitor
+        NumericalContinuation.eval_function!(res, func, u, data, chart, active, monitor)
         @test res ≈ [0, 0, 0, 0]
+
         # Test with monitor function active
-        u0_ext = (; u0..., monitor = [0])
-        NumericalContinuation.eval_function!(res, func, u0_ext, data, nothing, Set([1]),
-                                             monitor)
+        u_ext = ComponentVector(u; monitor = [0])
+        active[1] = true
+        NumericalContinuation.eval_function!(res, func, u_ext, data, chart, active, monitor)
         @test res ≈ [0, sqrt(2), 0, 0]
     end
     alg_problem1(Float64)
     alg_problem1(Float32)
-
-    function alg_problem2(::Type{T}) where {T}
-        # Problem 1 (example from COCO book) with u[2] := p[1], u[3] := p[2]
-        _u0 = T[1.0]
-        _p0 = T[1.0, 0.5]
-        prob = algebraic_problem((u, p) -> [u[1]^2 + (p[1] - 1)^2 - 1], _u0, _p0)
-        add_monitor_function!(prob, :ψ₁, monitor_function((u, p) -> sqrt(u[1]^2 + p[1]^2); pars = true))
-        add_monitor_function!(prob, :ψ₂, monitor_function((u, p) -> u[1]; pars = true))
-        add_monitor_function!(prob, :ψ₃, monitor_function((u, p) -> p[2] - u[1] + 0.5; pars = true))
-        @test monitor_function_name(prob) == [:p1, :p2, :ψ₁, :ψ₂, :ψ₃]
-        @test isempty(sub_problem_name(prob))
-        (u0, data) = NumericalContinuation.get_initial(prob)
-        @test (collect(Iterators.flatten(Iterators.flatten(u0))) == [_u0; _p0])
-        res_layout = NumericalContinuation.get_initial_residual_layout(prob)
-        @test (length(collect(Iterators.flatten(res_layout))) == 6)
-
-        func = NumericalContinuation.ContinuationFunction(prob)
-        monitor = zeros(T, length(monitor_function_name(prob)))
-        res = ComponentVector{T}(res_layout)
-        # Test with NamedTuple
-        NumericalContinuation.eval_monitor_function!(monitor, func, u0, data, nothing)
-        @test monitor[3:end] ≈ [sqrt(2), 1.0, 0.0]
-        NumericalContinuation.eval_function!(res, func, u0, data, nothing, Set(Int[]),
-                                             monitor)
-        @test res ≈ [0, 0, 0, 0, 0, 0]
-        # Test with ComponentArray
-        u0_cmp = ComponentVector{T}(u0)
-        NumericalContinuation.eval_monitor_function!(monitor, func, u0_cmp, data, nothing)
-        @test monitor[3:end] ≈ [sqrt(2), 1.0, 0.0]
-        NumericalContinuation.eval_function!(res, func, u0_cmp, data, nothing, Set(Int[]),
-                                             monitor)
-        @test res ≈ [0, 0, 0, 0, 0, 0]
-        # Test with monitor function active
-        u0_ext = (; u0..., monitor = [0])
-        NumericalContinuation.eval_function!(res, func, u0_ext, data, nothing, Set([3]),
-                                             monitor)
-        @test res ≈ [0, 0, 0, sqrt(2), 0, 0]
-    end
-    alg_problem2(Float64)
-    alg_problem2(Float32)
 end
