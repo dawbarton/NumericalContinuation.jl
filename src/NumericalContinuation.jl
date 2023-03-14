@@ -1,9 +1,10 @@
 module NumericalContinuation
 
+using TestItems: @testitem
 using LinearAlgebra
 using ComponentArrays: ComponentVector
 using Accessors: @optic, opcompose, PropertyLens, IndexLens
-using TestItems: @testitem
+using ForwardDiff
 
 const RESERVED_NAMES = Set([:zero, :monitor])
 

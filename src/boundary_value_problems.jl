@@ -45,7 +45,7 @@ struct FourierCollocation{F, T}
         _f = IIPWrapper(f, 3)  # Ensure that the function has an in-place form
         T = eltype(u)
         nmesh = size(u, 2)
-        Dt = fourier_diff(T, nmesh) .* -2π  # Scale to [0, 1] and transpose
+        Dt = fourier_diff(T, nmesh) .* -2π  # Scale to [0, 1] and transpose (negative = transpose)
         _vars = nmesh * ndim + length(p) + 2
         _eqns = nmesh * ndim
         return new{typeof(_f), T}(_f,
@@ -72,9 +72,84 @@ function (fourier::FourierCollocation)(res, u, data; kwargs...)
     return res
 end
 
-function fourier_collocation(f, u, tspan, p = (), eqns = missing)
-    prob = ContinuationProblem(FourierCollocation(f, u, tspan, p, eqns))
-    return add_parameters!(prob, :p, keys(p))
+# Integral phase condition: Int(u_k(t) * u'_{k-1}(t), t=0..1); some codes (e.g., COCO) take
+# u_{k-1} to be the initial solution point and don't bother updating. We do the same.
+struct PhaseCondition{U}
+    du::U
+end
+
+# Fourier integration matrix is simply the trapezium rule
+(pc::PhaseCondition)(u) = dot(pc.du, u.u)
+
+"""
+    fourier_collocation(f, u, tspan, [p]; [t0], [eqns])
+
+Implement a Fourier-based collocation scheme for discretising a periodic orbit. The vector
+field `f` is assumed to be of the same form as used in the SciML/DiffEq ecosystem, i.e.,
+`f(u, p, t)`, where `u` is the state vector, `p` are the (continuation) parameters, and `t`
+is time.
+
+The state vector `u` is assumed to be a matrix; the columns are the state vectors at
+different times. The times are assumed to equispaced between `tspan[1]` and `tspan[2]`. The
+final state vector at `tspan[2]` is omitted (due to periodicity it is the same as at
+`tspan[1]`).
+
+Note that all parameters in `p` are added as (initially inactive) continuation parameters.
+If your problem has many parameters that are not likely to be used for continuation, it can
+be better to separate them out using a callable `struct` (or a closure) to encapsulate that
+data.
+
+By default, the start time `t0` is fixed as zero. This can be changed to be any numerical
+value consistent with the problem, or removed entirely by setting `t0 = nothing`.
+
+The number of (first-order) differential equations is specified by `eqns`; by default this
+is assumed equal to `length(u[:, begin])` but can be overridden if needed.
+
+# Example
+
+Construct an initial solution using a simulation using OrdinaryDiffEq.
+
+```
+using OrdinaryDiffEq
+
+function hopf!(res, u, p, t)
+    ss = u[1]^2 + u[2]^2
+    res[1] = p[1] * u[1] - u[2] + p[2] * u[1] * ss
+    res[2] = u[1] + p[1] * u[2] + p[2] * u[2] * ss
+    return res
+end
+
+# Starting point on the limit cycle with period 2π
+u0 = [1.0, 0.0]
+tspan = (0.0, 2π)
+p = [1.0, -1.0]
+odeprob = ODEProblem(hopf!, u0, tspan, p)
+sol = solve(odeprob, Tsit5())
+
+# Collocation problem
+n = 20  # number of collocation points
+t = range(0.0, 2π, length=n+1)[1:end-1]  # omit the last point
+u = Matrix(sol(t))
+prob = fourier_collocation(hopf!, u, tspan, p)
+
+```
+"""
+function fourier_collocation(f, u, tspan, p = (); t0 = 0, phase = true, eqns = nothing)
+    _eqns = eqns === nothing ? size(u, 1) : eqns
+    fcprob = FourierCollocation(f, u, tspan, p, _eqns)
+    prob = ContinuationProblem(fcprob)
+    # Add continuation parameters (all inactive to start with)
+    add_parameters!(prob, :p, keys(p))
+    # Fix start time
+    if t0 !== nothing
+        add_parameter!(prob, :t0, @optic(_.tspan[begin]); value = t0)
+    end
+    # Add phase condition
+    if phase
+        du = vec((u * fcprob.Dt) .* (1 / fcprob.nmesh))  # time derivative of initial solution scaled by the number of mesh points
+        add_parameter!(prob, :phase, PhaseCondition(du); value = 0)
+    end
+    return prob
 end
 
 @testitem "Fourier collocation" begin
@@ -90,8 +165,8 @@ end
     # Define initial solution
     p0 = [1.0, -1.0]
     t = range(0, 2π, length = 21)[1:(end - 1)]
-    u0 = [sqrt(p0[1]) .* cos.(t) sqrt(p0[1]) .* sin.(t)]'
-    prob = NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0, 2)
+    u0 = [sqrt(p0[1]) .* sin.(t) -sqrt(p0[1]) .* cos.(t)]'
+    prob = NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0)
 
     # Problem set up
     (_u, data) = NumericalContinuation.get_initial(prob)
@@ -100,10 +175,12 @@ end
     chart = nothing
 
     # Buffers
-    u = ComponentVector{Float64}(_u)
+    active = ComponentVector{Bool}(_active)
+    u = ComponentVector(ComponentVector{Float64}(_u);
+                        monitor = zeros(Float64, count(active)))
     monitor = ComponentVector{Float64}(_monitor)
     res = ComponentVector{Float64}(res_layout)
-    active = ComponentVector{Bool}(_active)
+    @test length(res) == length(u)
 
     # Optimised code
     func = NumericalContinuation.ContinuationFunction(prob)

@@ -218,7 +218,7 @@ Return a (potentially nested) `NamedTuple` of zeros in the required shape for th
 """
 function get_initial_residual_layout(prob::ContinuationProblem)
     res = Any[name => get_initial_residual_layout(sub_prob)
-           for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
+              for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
     push!(res, :zero => falses(get_eqns(prob.zero_function!)))
     push!(res, :monitor => falses(length(prob.monitor_function)))
     return NamedTuple(res)
@@ -278,8 +278,19 @@ Wrap a function of the form `f(u, p)` (if `pars` is `true`) or `f(u)` (if `pars`
 in a monitor function compatible form. The initial value of the monitor function may be
 provided in `value` and whether the monitor function is active is determined by `active`.
 """
-function monitor_function(f; value = nothing, active = false, pars = false)
-    MonitorFunction(f, value, active, pars)
+function monitor_function(f; value = nothing, active = false, pars = nothing)
+    if pars === nothing
+        _pars = false
+        for method in methods(f)
+            if method.nargs == 3
+                _pars = true
+                break
+            end
+        end
+    else
+        _pars = pars
+    end
+    MonitorFunction(f, value, active, _pars)
 end
 
 """
@@ -297,8 +308,11 @@ add_parameter!(prob, :p, @optic(_.p[1]))  # parameter p corresponds to u.p[1]
 """
 function add_parameter! end
 
-function add_parameter!(prob::ContinuationProblem, name::Symbol, lens; active = false)
-    add_monitor_function!(prob, name, monitor_function(lens; active = active, pars = false))
+function add_parameter!(prob::ContinuationProblem, name::Symbol, lens; active = false,
+                        value = nothing)
+    add_monitor_function!(prob, name,
+                          monitor_function(lens; active = active, pars = false,
+                                           value = value))
 end
 
 function add_parameters!(prob::ContinuationProblem, name::Symbol, indices; active = false)

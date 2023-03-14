@@ -96,7 +96,7 @@ function _eval_function!(res, func, u, data, chart, active, monitor)
     for (i, monitor_function) in enumerate(allmonitor_function)
         push!(result.args,
               :(monitor_val = active[$i] ? u.monitor[j += 1] : monitor[$i])) # could replace with ifelse and get (with default value);
-              # :(monitor_val = ifelse(active[$i], get(u.monitor, j += active[$i], zero(eltype(monitor))), monitor[$i])))  # almost works (doesn't work if u.monitor is missing, e.g., NamedTuple); TODO: benchmark any differences
+        # :(monitor_val = ifelse(active[$i], get(u.monitor, j += active[$i], zero(eltype(monitor))), monitor[$i])))  # almost works (doesn't work if u.monitor is missing, e.g., NamedTuple); TODO: benchmark any differences
         push!(result.args,
               :(res.monitor[$i] = $monitor_function - monitor_val))
     end

@@ -30,9 +30,9 @@ end
         # Problem 1 (example from COCO book)
         _u0 = T[1.0, 1.0, 0.5]
         prob = algebraic_problem((u, p) -> [u[1]^2 + (u[2] - 1)^2 - 1], _u0)
-        add_monitor_function!(prob, :ψ₁, monitor_function((u, p) -> sqrt(u[1]^2 + u[2]^2); pars = true))
-        add_monitor_function!(prob, :ψ₂, monitor_function((u, p) -> u[1]; pars = true))
-        add_monitor_function!(prob, :ψ₃, monitor_function((u, p) -> u[3] - u[1] + 0.5; pars = true))
+        add_monitor_function!(prob, :ψ₁, monitor_function((u, p) -> sqrt(u[1]^2 + u[2]^2)))
+        add_monitor_function!(prob, :ψ₂, monitor_function((u, p) -> u[1]))
+        add_monitor_function!(prob, :ψ₃, monitor_function((u, p) -> u[3] - u[1] + 0.5))
         @test monitor_function_name(prob) == [:ψ₁, :ψ₂, :ψ₃]
         @test isempty(sub_problem_name(prob))
 
