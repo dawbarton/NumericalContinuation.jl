@@ -32,9 +32,9 @@ fourier_diff(N::Integer; kwargs...) = fourier_diff(Float64, N; kwargs...)
 
 @testitem "Fourier differentiation" begin
     n = 50
-    D = fourier_diff(n)
-    D2 = fourier_diff(n; order = 2)
-    @test_throws ErrorException D3 = fourier_diff(n; order = 3)  # for test coverage...
+    D = NumericalContinuation.fourier_diff(n)
+    D2 = NumericalContinuation.fourier_diff(n; order = 2)
+    @test_throws ErrorException D3 = NumericalContinuation.fourier_diff(n; order = 3)  # for test coverage...
     t = range(0, 2π, n+1)[1:end-1]
     x = @. sin(2*cos(t))
     dx_exact = @. -2*cos(2*cos(t))*sin(t)
