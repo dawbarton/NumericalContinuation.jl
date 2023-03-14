@@ -30,6 +30,19 @@ function fourier_diff(T::Type{<:Number}, N::Integer; order = 1)
 end
 fourier_diff(N::Integer; kwargs...) = fourier_diff(Float64, N; kwargs...)
 
+@testitem "Fourier differentiation" begin
+    n = 50
+    D = fourier_diff(n)
+    D2 = fourier_diff(n; order = 2)
+    @test_throws ErrorException D3 = fourier_diff(n; order = 3)  # for test coverage...
+    t = range(0, 2π, n+1)[1:end-1]
+    x = @. sin(2*cos(t))
+    dx_exact = @. -2*cos(2*cos(t))*sin(t)
+    dx2_exact = @. -2*(cos(t)*cos(2*cos(t)) + 2*sin(t)^2*sin(2*cos(t)))
+    @test D*x ≈ dx_exact
+    @test D2*x ≈ dx2_exact
+end
+
 struct FourierCollocation{F, T}
     f::F
     u0::Any
@@ -75,7 +88,7 @@ end
 # Integral phase condition: Int(u_k(t) * u'_{k-1}(t), t=0..1); some codes (e.g., COCO) take
 # u_{k-1} to be the initial solution point and don't bother updating. We do the same.
 struct PhaseCondition{U}
-    du::U
+    du::U  # TODO: think about how to put this into chart data to avoid problems with recomputation
 end
 
 # Fourier integration matrix is simply the trapezium rule
