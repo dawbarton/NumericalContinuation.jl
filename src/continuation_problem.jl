@@ -227,39 +227,58 @@ end
 """
     get_initial_monitor(prob, u, data)
 
-Return a tuple of the initial values of the monitor functions, and whether they are active
-or not, as (potentially nested) `NamedTuple`s.
+Return a tuple of the initial values of the monitor functions as (potentially nested)
+`NamedTuple`s.
 """
 function get_initial_monitor(prob::ContinuationProblem, u, data)
     monitor = Pair{Symbol, Any}[]
+    # Sub-problems
+    for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)
+        _monitor = get_initial_monitor(sub_prob, getproperty(u, name), getproperty(data, name))
+        push!(monitor, name => _monitor)
+    end
+    # Monitor functions
+    for (name, monitor_function) in zip(prob.monitor_function_name, prob.monitor_function)
+        _monitor = get_initial_monitor(prob, monitor_function, name, u, data)
+        push!(monitor, name => _monitor)
+    end
+    return NamedTuple(monitor)
+end
+
+function get_initial_monitor(::ContinuationProblem, mfunc, name, u, data)
+    # Default fallback for monitor functions that follow the MonitorFunction interface
+    if mfunc.initial_value !== nothing
+        value = mfunc.initial_value
+    else
+        # Call the monitor function to get its initial value
+        value = mfunc(u.zero, getproperty(data, name); parent = (u, data), chart = nothing)
+    end
+    return value
+end
+
+"""
+    get_initial_active(prob, u, data)
+
+Return a tuple of the initial values of the monitor functions, and whether they are active
+or not, as (potentially nested) `NamedTuple`s.
+"""
+function get_initial_active(prob::ContinuationProblem)
     active = Pair{Symbol, Bool}[]
     # Sub-problems
     for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)
-        (_monitor, _active) = get_initial_monitor(sub_prob, getproperty(u, name),
-                                                  getproperty(data, name))
-        push!(monitor, name => _monitor)
+        _active = get_initial_active(sub_prob)
         push!(active, name => _active)
     end
     # Monitor functions
     for (name, monitor_function) in zip(prob.monitor_function_name, prob.monitor_function)
-        (_monitor, _active) = get_initial_monitor(prob, monitor_function, name, u, data)
-        push!(monitor, name => _monitor)
+        _active = get_initial_active(prob, monitor_function)
         push!(active, name => _active)
     end
-    return (NamedTuple(monitor), NamedTuple(active))
+    return NamedTuple(active)
 end
 
-function get_initial_monitor(::ContinuationProblem, monitor_function, name, u, data)
-    # Default fallback for monitor functions that follow the MonitorFunction interface
-    if monitor_function.initial_value !== nothing
-        value = monitor_function.initial_value
-    else
-        # Call the monitor function to get its initial value
-        value = monitor_function(u.zero, getproperty(data, name); parent = (u, data),
-                                 chart = nothing)
-    end
-    return (value, monitor_function.initial_active)
-end
+# Default fallback for monitor functions that follow the MonitorFunction interface
+get_initial_active(::ContinuationProblem, mfunc) = mfunc.initial_active
 
 struct MonitorFunction{P, F}
     f::F

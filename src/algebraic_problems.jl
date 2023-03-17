@@ -38,7 +38,8 @@ end
 
         # Get initial values
         (u0, data) = NumericalContinuation.get_initial(prob)
-        (monitor0, active0) = NumericalContinuation.get_initial_monitor(prob, u0, data)
+        active0 = NumericalContinuation.get_initial_active(prob)
+        monitor0 = NumericalContinuation.get_initial_monitor(prob, u0, data)
         res_layout = NumericalContinuation.get_initial_residual_layout(prob)
 
         # Generate the optimised code

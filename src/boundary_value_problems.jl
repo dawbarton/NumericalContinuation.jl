@@ -183,7 +183,8 @@ end
 
     # Problem set up
     (_u, data) = NumericalContinuation.get_initial(prob)
-    (_monitor, _active) = NumericalContinuation.get_initial_monitor(prob, _u, data)
+    _active = NumericalContinuation.get_initial_active(prob)
+    _monitor = NumericalContinuation.get_initial_monitor(prob, _u, data)
     res_layout = NumericalContinuation.get_initial_residual_layout(prob)
     chart = nothing
 
