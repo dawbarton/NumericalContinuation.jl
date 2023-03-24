@@ -82,6 +82,88 @@ function ContinuationFunction(prob::ContinuationProblem)
                                 prob.sub_problem_name)
 end
 
+(func::ContinuationFunction)(res, u, (data, chart, active, monitor)) = eval_function!(res, func, u, data, chart, active, monitor)
+
+"""
+    FuncPar(name; unwrap=false, append=false)
+
+This struct represents a parameter to a function and is used in the automatic code
+generation functions for `ContinuationFunction`s.
+
+- `name` is a symbol or expression passed to the function.
+- `unwrap` indicates whether `name` should be unwrapped (via `getproperty`) with the name of
+  the subproblem. (E.g., `u` becomes `u.sub_problem_name`.)
+- `append` indicates whether `name` should be appended with `zero` or the name of the
+  monitor function. (E.g., `u` becomes `u.zero` for zero functions or
+  `u.monitor_function_name` for monitor functions.)
+"""
+struct FuncPar
+    name::Any
+    unwrap::Bool
+    append::Bool
+end
+FuncPar(name; unwrap=false, append=false) = FuncPar(name, unwrap, append)
+
+"""
+    FuncPar(fp::FuncPar, name)
+
+Extend the name of an existing `FuncPar`, respecting the value of `unwrap`.
+"""
+function FuncPar(fp::FuncPar, name)
+    if fp.unwrap
+        return FuncPar(:($(fp.name).$name), fp.unwrap, fp.append)
+    else
+        return fp
+    end
+end
+
+"""
+    get_par(fp::FuncPar, name)
+
+Get the name of a `FuncPar` with the given name appended, respecting the value of `append`.
+"""
+function get_par(fp::FuncPar, name)
+    if fp.append
+        return :($(fp.name).$name)
+    else
+        return fp.name
+    end
+end
+
+function _generate_apply_function(func::Type{CF}, applyto, args) where {CF <: ContinuationFunction}
+    expr = []
+    _generate_apply_function!(expr, func, applyto, args)
+    return expr
+end
+
+function _generate_apply_function!(expr, func::Type{CF}, applyto, args) where {CF <: ContinuationFunction}
+    # ContinuationFunction{Z, M, MNAME, P, PNAME}
+    (Z, M, MNAME, P, PNAME) = func.parameters
+    for i in Base.OneTo(length(P.parameters))
+        name = PNAME.parameters[i]
+        new_args = [FuncPar(arg, name) for arg in args]
+        _generate_apply_function!(expr, P.parameters[i], applyto, new_args)
+    end
+    if (Z !== Nothing) && ((applyto == :zero) || (applyto == :all))
+        apply = Expr(:call)
+        for arg in args
+            push!(apply.args, get_par(arg, :zero))
+        end
+        push!(expr, apply)
+    end
+    if (applyto == :monitor) || (applyto == :all)
+        for i in Base.OneTo(length(M.parameters))
+            name = MNAME.parameters[i]
+            apply = Expr(:call)
+            for arg in args
+                push!(apply.args, get_par(arg, name))
+            end
+            push!(expr, apply)
+        end
+    end
+    return expr
+end
+
 @generated function eval_function!(res, func::ContinuationFunction, u, data, chart, active,
                                    monitor)
     return _eval_function!(res, func, u, data, chart, active, monitor)

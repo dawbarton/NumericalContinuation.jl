@@ -159,6 +159,7 @@ function fourier_collocation(f, u, tspan, p = (); t0 = 0, phase = true, eqns = n
     end
     # Add phase condition
     if phase
+        # TODO: should this be normalised?
         du = vec((u * fcprob.Dt) .* (1 / fcprob.nmesh))  # time derivative of initial solution scaled by the number of mesh points
         add_parameter!(prob, :phase, PhaseCondition(du); value = 0)
     end
