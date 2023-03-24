@@ -234,7 +234,8 @@ function get_initial_monitor(prob::ContinuationProblem, u, data)
     monitor = Pair{Symbol, Any}[]
     # Sub-problems
     for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)
-        _monitor = get_initial_monitor(sub_prob, getproperty(u, name), getproperty(data, name))
+        _monitor = get_initial_monitor(sub_prob, getproperty(u, name),
+                                       getproperty(data, name))
         push!(monitor, name => _monitor)
     end
     # Monitor functions
@@ -263,7 +264,7 @@ Return a tuple of the initial values of the monitor functions, and whether they 
 or not, as (potentially nested) `NamedTuple`s.
 """
 function get_initial_active(prob::ContinuationProblem)
-    active = Pair{Symbol, Bool}[]
+    active = Pair{Symbol, Any}[]
     # Sub-problems
     for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)
         _active = get_initial_active(sub_prob)
