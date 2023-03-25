@@ -103,7 +103,9 @@ struct FuncPar
     append::Bool
     cont_func::Bool
 end
-FuncPar(name; unwrap = false, append = false, cont_func = false) = FuncPar(name, unwrap, append, cont_func)
+function FuncPar(name; unwrap = false, append = false, cont_func = false)
+    FuncPar(name, unwrap, append, cont_func)
+end
 
 """
     FuncPar(fp::FuncPar, name, idx)
@@ -256,16 +258,27 @@ end
 
 @generated function eval_zero_function!(res, func::ContinuationFunction, u, data, active,
                                         monitor)
-    return _generate_eval_zero_function!(func)
+    return _generate_eval_zero_function(func)
 end
 
-function _generate_eval_zero_function!(func)
+function _generate_eval_zero_function(func::Type{CF}) where {CF <: ContinuationFunction}
     result = quote
         j = 0
     end
-    _generate_apply_function(func, :zero, [FuncPar])
-    _gen_zero_function!(result.args, func, :res, :func, :u, :data, :chart)
-    allmonitor_function = _gen_monitor_function!([], func, :func, :u, :data, :chart)
+    _generate_apply_function!(result.args, func, :zero,
+                              [
+                                  FuncPar(:func; cont_func = true),
+                                  FuncPar(:res; unwrap = true, append = true),
+                                  FuncPar(:u; unwrap = true),
+                                  FuncPar(:data, unwrap = true),
+                              ])
+    allmonitor_function = _generate_apply_function(func, :monitor,
+                                                   [
+                                                       FuncPar(:func; cont_func = true),
+                                                       FuncPar(:u; unwrap = true),
+                                                       FuncPar(:data, unwrap = true),
+                                                       FuncPar(:data, unwrap = true, append = true),
+                                                   ])
     for (i, monitor_function) in enumerate(allmonitor_function)
         push!(result.args,
               :(monitor_val = active[$i] ? u.monitor[j += 1] : monitor[$i])) # could replace with ifelse and get (with default value);
@@ -277,68 +290,22 @@ function _generate_eval_zero_function!(func)
     return result
 end
 
-function _eval_function!(res, func::ContinuationFunction, u, data, chart, active, monitor)
-    return _eval_function!(typeof(res), typeof(func), typeof(u), typeof(data),
-                           typeof(chart), typeof(active), typeof(monitor))
+@generated function eval_monitor_function!(res, func::ContinuationFunction, u, data)
+    return _generate_eval_monitor_function(func)
 end
 
-@generated function eval_monitor_function!(res, func::ContinuationFunction, u, data, chart)
+function _generate_eval_monitor_function(func::Type{CF}) where CF <: ContinuationFunction
     result = quote end
-    allmonitor_function = _gen_monitor_function!([], func, :func, :u, :data, :chart)
+    allmonitor_function = _generate_apply_function(func, :monitor,
+                                                   [
+                                                       FuncPar(:func; cont_func = true),
+                                                       FuncPar(:u; unwrap = true),
+                                                       FuncPar(:data, unwrap = true),
+                                                       FuncPar(:data, unwrap = true, append = true),
+                                                   ])
     for (i, monitor_function) in enumerate(allmonitor_function)
         push!(result.args, :(res[$i] = $monitor_function))
     end
     push!(result.args, :(return res))
-    return result
-end
-
-"""
-    _gen_zero_function!(result, ::ContinuationFunction, res, func, u, data, chart)
-
-INTERNAL ONLY
-
-Generate an expression tree to call each zero function within a `ContinuationFunction` and
-its subproblems, acting in place. This function should be called from an `@generated`
-function. `res`, `prob`, `u`, `data`, `chart` are the names of the corresponding parameters
-in the generated function given as a `Symbol` or `Expr`.
-"""
-function _gen_zero_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P, PNAME}},
-                             res, func, u, data, chart) where {Z, M, MNAME, P, PNAME}
-    for i in Base.OneTo(length(P.parameters))
-        name = PNAME.parameters[i]
-        _gen_zero_function!(result, P.parameters[i], :($res.$name),
-                            :($func.sub_problem[$i]), :($u.$name), :($data.$name), chart)
-    end
-    if Z !== Nothing
-        push!(result,
-              :($func.zero_function!($res.zero, $u.zero, $data.zero; parent = ($u, $data),
-                                     chart = $chart)))
-    end
-    return result
-end
-
-"""
-    _gen_monitor_function!(result, ::ContinuationFunction, res, prob, u, data, chart)
-
-INTERNAL ONLY
-
-Generate an expression tree to call each monitor function within a `ContinuationFunction`
-and its subproblems, acting in place. This function should be called from an `@generated`
-function. `res`, `func`, `u`, `data`, and `chart` are the names of the corresponding
-parameters in the generated function given as a `Symbol` or `Expr`.
-"""
-function _gen_monitor_function!(result, ::Type{ContinuationFunction{Z, M, MNAME, P, PNAME}},
-                                func, u, data, chart) where {Z, M, MNAME, P, PNAME}
-    for i in Base.OneTo(length(P.parameters))
-        name = PNAME.parameters[i]
-        _gen_monitor_function!(result, P.parameters[i], :($func.sub_problem[$i]),
-                               :($u.$name), :($data.$name), chart)
-    end
-    for i in Base.OneTo(length(M.parameters))
-        name = MNAME.parameters[i]
-        push!(result,
-              :($func.monitor_function[$i]($u.zero, $data.$name; parent = ($u, $data),
-                                           chart = $chart)))
-    end
     return result
 end

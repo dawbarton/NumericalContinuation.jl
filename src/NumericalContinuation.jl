@@ -2,7 +2,7 @@ module NumericalContinuation
 
 using TestItems: @testitem
 using LinearAlgebra
-using ComponentArrays: ComponentVector
+using ComponentArrays: ComponentVector, getaxes
 using Accessors: @optic, opcompose, PropertyLens, IndexLens
 using ForwardDiff
 

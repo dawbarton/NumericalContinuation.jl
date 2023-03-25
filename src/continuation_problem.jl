@@ -253,7 +253,7 @@ function get_initial_monitor(::ContinuationProblem, mfunc, name, u, data)
         value = mfunc.initial_value
     else
         # Call the monitor function to get its initial value
-        value = mfunc(u.zero, getproperty(data, name); parent = (u, data), chart = nothing)
+        value = mfunc(u, data, getproperty(data, name))
     end
     return value
 end
@@ -289,8 +289,8 @@ struct MonitorFunction{P, F}
     MonitorFunction(f, value, active, pars) = new{pars, typeof(f)}(f, value, active)
 end
 
-(monitor::MonitorFunction{false})(u, data; kwargs...) = monitor.f(u)
-(monitor::MonitorFunction{true})(u, data; kwargs...) = monitor.f(u.u, u.p)
+(monitor::MonitorFunction{false})(u, data, mdata; kwargs...) = monitor.f(u.zero)
+(monitor::MonitorFunction{true})(u, data, mdata; kwargs...) = monitor.f(u.zero.u, u.zero.p)
 
 """
     monitor_function(f; value = nothing, active = false, pars = true)

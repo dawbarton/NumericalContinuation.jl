@@ -18,7 +18,7 @@ struct AlgebraicProblem
     end
 end
 
-(alg::AlgebraicProblem)(res, u, data; kwargs...) = alg.f(res, u.u, u.p)
+(alg::AlgebraicProblem)(res, u, data; kwargs...) = alg.f(res, u.zero.u, u.zero.p)
 
 function algebraic_problem(f, u, p = (;), eqns = missing)
     prob = ContinuationProblem(AlgebraicProblem(f, u, p, eqns))
@@ -33,7 +33,7 @@ end
         add_monitor_function!(prob, :ψ₁, monitor_function((u, p) -> sqrt(u[1]^2 + u[2]^2)))
         add_monitor_function!(prob, :ψ₂, monitor_function((u, p) -> u[1]))
         add_monitor_function!(prob, :ψ₃, monitor_function((u, p) -> u[3] - u[1] + 0.5))
-        @test monitor_function_name(prob) == [:ψ₁, :ψ₂, :ψ₃]
+        @test monitor_function_name(prob) == ["ψ₁", "ψ₂", "ψ₃"]
         @test isempty(sub_problem_name(prob))
 
         # Get initial values
@@ -58,21 +58,21 @@ end
 
         # Test with NamedTuple
         monitor1 = zero(monitor)
-        NumericalContinuation.eval_monitor_function!(monitor1, func, u0, data, chart)
+        NumericalContinuation.eval_monitor_function!(monitor1, func, u0, data)
         @test monitor1 ≈ monitor
-        NumericalContinuation.eval_function!(res, func, u0, data, chart, active, monitor)
+        NumericalContinuation.eval_zero_function!(res, func, u0, data, active, monitor)
         @test res ≈ [0, 0, 0, 0]
 
         # Test with ComponentArray
-        NumericalContinuation.eval_monitor_function!(monitor1, func, u, data, chart)
+        NumericalContinuation.eval_monitor_function!(monitor1, func, u, data)
         @test monitor1 ≈ monitor
-        NumericalContinuation.eval_function!(res, func, u, data, chart, active, monitor)
+        NumericalContinuation.eval_zero_function!(res, func, u, data, active, monitor)
         @test res ≈ [0, 0, 0, 0]
 
         # Test with monitor function active
         u_ext = ComponentVector(u; monitor = [0])
         active[1] = true
-        NumericalContinuation.eval_function!(res, func, u_ext, data, chart, active, monitor)
+        NumericalContinuation.eval_zero_function!(res, func, u_ext, data, active, monitor)
         @test res ≈ [0, sqrt(2), 0, 0]
     end
     alg_problem1(Float64)

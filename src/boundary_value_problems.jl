@@ -34,13 +34,13 @@ fourier_diff(N::Integer; kwargs...) = fourier_diff(Float64, N; kwargs...)
     n = 50
     D = NumericalContinuation.fourier_diff(n)
     D2 = NumericalContinuation.fourier_diff(n; order = 2)
-    @test_throws ErrorException D3 = NumericalContinuation.fourier_diff(n; order = 3)  # for test coverage...
-    t = range(0, 2π, n+1)[1:end-1]
-    x = @. sin(2*cos(t))
-    dx_exact = @. -2*cos(2*cos(t))*sin(t)
-    dx2_exact = @. -2*(cos(t)*cos(2*cos(t)) + 2*sin(t)^2*sin(2*cos(t)))
-    @test D*x ≈ dx_exact
-    @test D2*x ≈ dx2_exact
+    @test_throws ErrorException D3=NumericalContinuation.fourier_diff(n; order = 3)  # for test coverage...
+    t = range(0, 2π, n + 1)[1:(end - 1)]
+    x = @. sin(2 * cos(t))
+    dx_exact = @. -2 * cos(2 * cos(t)) * sin(t)
+    dx2_exact = @. -2 * (cos(t) * cos(2 * cos(t)) + 2 * sin(t)^2 * sin(2 * cos(t)))
+    @test D * x ≈ dx_exact
+    @test D2 * x ≈ dx2_exact
 end
 
 struct FourierCollocation{F, T}
@@ -67,7 +67,8 @@ struct FourierCollocation{F, T}
     end
 end
 
-function (fourier::FourierCollocation)(res, u, data; kwargs...)
+function (fourier::FourierCollocation)(res, uu, data; kwargs...)
+    u = uu.zero
     # TODO: work out if there are any allocations left in here
     # Calculate the right-hand side
     T = u.tspan[end] - u.tspan[begin]
@@ -201,6 +202,6 @@ end
     func = NumericalContinuation.ContinuationFunction(prob)
 
     # Evaluate
-    NumericalContinuation.eval_function!(res, func, u, data, chart, active, monitor)
+    NumericalContinuation.eval_zero_function!(res, func, u, data, active, monitor)
     @test norm(res) < 1e-12
 end
