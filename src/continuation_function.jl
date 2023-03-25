@@ -42,12 +42,13 @@ This is a closed (i.e., the structure cannot be modified any further) version of
 `ContinuationProblem` that is used for computational efficiency during continuation.
 """
 struct ContinuationFunction{Z, M, MNAME, P, PNAME}
+    prob::ContinuationProblem
     zero_function!::Z
     monitor_function::M
     sub_problem::P
 
-    function ContinuationFunction(zero_function!, monitor_function, monitor_function_name,
-                                  sub_problem, sub_problem_name)
+    function ContinuationFunction(prob, zero_function!, monitor_function,
+                                  monitor_function_name, sub_problem, sub_problem_name)
         if length(monitor_function) != length(monitor_function_name)
             throw(ArgumentError("Each monitor function must have one and only one name"))
         end
@@ -60,7 +61,7 @@ struct ContinuationFunction{Z, M, MNAME, P, PNAME}
         _check_names([monitor_function_name; sub_problem_name])  # check for duplicates and reserved names
         return new{typeof(zero_function!), Tuple{(typeof.(monitor_function))...},
                    Tuple{monitor_function_name...}, Tuple{(typeof.(sub_problem))...},
-                   Tuple{sub_problem_name...}}(zero_function!, (monitor_function...,),
+                   Tuple{sub_problem_name...}}(prob, zero_function!, (monitor_function...,),
                                                (sub_problem...,))
     end
 end
@@ -77,15 +78,13 @@ function ContinuationFunction(prob::ContinuationProblem)
     for i in eachindex(prob.sub_problem)
         push!(sub_problem, ContinuationFunction(prob.sub_problem[i]))
     end
-    return ContinuationFunction(prob.zero_function!, prob.monitor_function,
+    return ContinuationFunction(prob, prob.zero_function!, prob.monitor_function,
                                 prob.monitor_function_name, sub_problem,
                                 prob.sub_problem_name)
 end
 
-(func::ContinuationFunction)(res, u, (data, chart, active, monitor)) = eval_function!(res, func, u, data, chart, active, monitor)
-
 """
-    FuncPar(name; unwrap=false, append=false)
+    FuncPar(name; unwrap=false, append=false, cont_func=false)
 
 This struct represents a parameter to a function and is used in the automatic code
 generation functions for `ContinuationFunction`s.
@@ -96,58 +95,70 @@ generation functions for `ContinuationFunction`s.
 - `append` indicates whether `name` should be appended with `zero` or the name of the
   monitor function. (E.g., `u` becomes `u.zero` for zero functions or
   `u.monitor_function_name` for monitor functions.)
+- `cont_func` indicates that the variable passed is a `ContinuationFunction`.
 """
 struct FuncPar
     name::Any
     unwrap::Bool
     append::Bool
+    cont_func::Bool
 end
-FuncPar(name; unwrap=false, append=false) = FuncPar(name, unwrap, append)
+FuncPar(name; unwrap = false, append = false, cont_func = false) = FuncPar(name, unwrap, append, cont_func)
 
 """
-    FuncPar(fp::FuncPar, name)
+    FuncPar(fp::FuncPar, name, idx)
 
 Extend the name of an existing `FuncPar`, respecting the value of `unwrap`.
 """
-function FuncPar(fp::FuncPar, name)
-    if fp.unwrap
-        return FuncPar(:($(fp.name).$name), fp.unwrap, fp.append)
+function FuncPar(fp::FuncPar, name, idx)
+    if fp.cont_func
+        return FuncPar(:($(fp.name).sub_problem[$idx]), fp.unwrap, fp.append, fp.cont_func)
+    elseif fp.unwrap
+        return FuncPar(:($(fp.name).$name), fp.unwrap, fp.append, fp.cont_func)
     else
         return fp
     end
 end
 
 """
-    get_par(fp::FuncPar, name)
+    get_par(fp::FuncPar, name, idx)
 
 Get the name of a `FuncPar` with the given name appended, respecting the value of `append`.
 """
-function get_par(fp::FuncPar, name)
-    if fp.append
+function get_par(fp::FuncPar, name, idx)
+    if fp.cont_func
+        if idx == 0
+            return :($(fp.name).zero_function!)
+        else
+            return :($(fp.name).monitor_function[$idx])
+        end
+    elseif fp.append
         return :($(fp.name).$name)
     else
         return fp.name
     end
 end
 
-function _generate_apply_function(func::Type{CF}, applyto, args) where {CF <: ContinuationFunction}
+function _generate_apply_function(func::Type{CF}, applyto,
+                                  args) where {CF <: ContinuationFunction}
     expr = []
     _generate_apply_function!(expr, func, applyto, args)
     return expr
 end
 
-function _generate_apply_function!(expr, func::Type{CF}, applyto, args) where {CF <: ContinuationFunction}
+function _generate_apply_function!(expr, func::Type{CF}, applyto,
+                                   args) where {CF <: ContinuationFunction}
     # ContinuationFunction{Z, M, MNAME, P, PNAME}
     (Z, M, MNAME, P, PNAME) = func.parameters
     for i in Base.OneTo(length(P.parameters))
         name = PNAME.parameters[i]
-        new_args = [FuncPar(arg, name) for arg in args]
+        new_args = [FuncPar(arg, name, i) for arg in args]
         _generate_apply_function!(expr, P.parameters[i], applyto, new_args)
     end
     if (Z !== Nothing) && ((applyto == :zero) || (applyto == :all))
         apply = Expr(:call)
         for arg in args
-            push!(apply.args, get_par(arg, :zero))
+            push!(apply.args, get_par(arg, :zero, 0))
         end
         push!(expr, apply)
     end
@@ -156,7 +167,7 @@ function _generate_apply_function!(expr, func::Type{CF}, applyto, args) where {C
             name = MNAME.parameters[i]
             apply = Expr(:call)
             for arg in args
-                push!(apply.args, get_par(arg, name))
+                push!(apply.args, get_par(arg, name, i))
             end
             push!(expr, apply)
         end
@@ -164,15 +175,95 @@ function _generate_apply_function!(expr, func::Type{CF}, applyto, args) where {C
     return expr
 end
 
-@generated function eval_function!(res, func::ContinuationFunction, u, data, chart, active,
-                                   monitor)
-    return _eval_function!(res, func, u, data, chart, active, monitor)
+"""
+    ContinuationData
+
+A wrapper for chart data. Stores current monitor function values and records which
+parameters are active.
+"""
+struct ContinuationData{T, D}
+    data::D
+    monitor::Vector{T}
+    active::Vector{Bool}
 end
 
-function _eval_function!(res, func, u, data, chart, active, monitor)
+"""
+    ContinuationWrapper
+
+A wrapper for a `ContinuationFunction` that allows it to be used with SciML solvers.
+Specifically, it allows `u` and `res` to be regular `Vector`s.
+
+By default `u` and `res` are wrapped in `ComponentVectors`s.
+"""
+struct ContinuationWrapper{F, T, U, R, M}
+    prob::ContinuationProblem
+    func::F
+    u_wrapper::U
+    res_wrapper::R
+    monitor_wrapper::M
+    monitor_names::Vector{String}
+    u0::Vector{T}
+    p0::ContinuationData
+end
+
+function ContinuationWrapper(prob::ContinuationProblem, pars = nothing)
+    return ContinuationWrapper(ContinuationFunction(prob), pars)
+end
+
+function ContinuationWrapper(func::ContinuationFunction, pars = nothing)
+    prob = func.prob
+    (_u0, data) = get_initial(prob)
+    u0 = ComponentVector(_u0)
+    res_layout = ComponentVector(get_initial_residual_layout(prob))
+    monitor = ComponentVector(get_initial_monitor(prob, u0, data))
+    active = collect(ComponentVector{Bool}(get_initial_active(prob)))
+    monitor_names = monitor_function_name(prob)
+    # Activate/deactivate parameters as necessary
+    if pars !== nothing
+        for par in pars
+            if par isa String
+                par_name = par
+                value = true
+            elseif par isa Pair
+                par_name = par[1]
+                value = par[2]
+            else
+                throw(ArgumentError("Invalid parameter specification"))
+            end
+            idx = findfirst(==(par_name), monitor_names)
+            if idx === nothing
+                throw(ArgumentError("Unknown parameter name"))
+            else
+                active[idx] = value
+            end
+        end
+    end
+    # Extend u0 with monitor function values
+    u0_ext = ComponentVector(u0; monitor = monitor[active])
+    p0 = ContinuationData(data, collect(monitor), active)
+    return ContinuationWrapper(prob, func, Base.Fix2(ComponentVector, getaxes(u0_ext)),
+                               Base.Fix2(ComponentVector, getaxes(res_layout)),
+                               Base.Fix2(ComponentVector, getaxes(monitor)), monitor_names,
+                               collect(u0_ext), p0)
+end
+
+function (cw::ContinuationWrapper)(res, u, p::ContinuationData)
+    _u = cw.u_wrapper(u)
+    _res = cw.res_wrapper(res)
+    eval_zero_function!(_res, cw.func, _u, p.data, p.active, p.monitor)
+    return res
+end
+
+@generated function eval_zero_function!(res, func::ContinuationFunction, u, data, active,
+                                        monitor)
+    return _generate_eval_zero_function!(func)
+end
+
+function _generate_eval_zero_function!(func)
     result = quote
         j = 0
     end
+    _generate_apply_function(func, :zero, [FuncPar])
     _gen_zero_function!(result.args, func, :res, :func, :u, :data, :chart)
     allmonitor_function = _gen_monitor_function!([], func, :func, :u, :data, :chart)
     for (i, monitor_function) in enumerate(allmonitor_function)
