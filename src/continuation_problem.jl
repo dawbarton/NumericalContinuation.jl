@@ -114,24 +114,25 @@ end
 """
     monitor_function_name(prob)
 
-Return the names of the monitor functions in the problem specified and its subproblems.
+Return the names of the monitor functions in the problem specified and its subproblems as a
+`Vector{String}`.
 """
 function monitor_function_name end
 
 function monitor_function_name(prob::ContinuationProblem)
-    return _monitor_function_names!(Symbol[], prob, Symbol())
+    return _monitor_function_names!(String[], prob, "")
 end
 
-function _monitor_function_names!(names::Vector{Symbol}, prob::ContinuationProblem,
+function _monitor_function_names!(names::Vector{String}, prob::ContinuationProblem,
                                   prefix)
-    # Must match the ordering of _gen_monitor_function!
+    # Must match the ordering of _generate_apply_function
     for i in eachindex(prob.sub_problem_name)
         name = prob.sub_problem_name[i]
-        _monitor_function_names!(names, prob.sub_problem[i], Symbol(prefix, name, :.))
+        _monitor_function_names!(names, prob.sub_problem[i], "$(prefix)$(name).")
     end
     for i in eachindex(prob.monitor_function_name)
         name = prob.monitor_function_name[i]
-        push!(names, Symbol(prefix, name))
+        push!(names, "$(prefix)$(name)")
     end
     return names
 end
@@ -139,20 +140,20 @@ end
 """
     sub_problem_name(prob)
 
-Return the names of the subproblems in the problem specified.
+Return the names of the subproblems in the problem specified as a `Vector{String}`.
 """
 function sub_problem_name end
 
 function sub_problem_name(prob::ContinuationProblem)
-    return _sub_problem_names!(Symbol[], prob, Symbol())
+    return _sub_problem_names!(String[], prob, "")
 end
 
-function _sub_problem_names!(names::Vector{Symbol}, prob::ContinuationProblem,
+function _sub_problem_names!(names::Vector{String}, prob::ContinuationProblem,
                              prefix)
     for i in eachindex(prob.sub_problem_name)
         name = prob.sub_problem_name[i]
-        _sub_problem_names!(names, prob.sub_problem[i], Symbol(prefix, name, :.))
-        push!(names, Symbol(prefix, name))
+        _sub_problem_names!(names, prob.sub_problem[i], "$(prefix)$(name).")
+        push!(names, "$(prefix)$(name)")
     end
     return names
 end
@@ -160,7 +161,7 @@ end
 """
     get_vars(prob)
 
-Return the number of variables defined in a problem.
+Return the number of variables defined in a problem. Does not include monitor variables.
 """
 function get_vars(prob::ContinuationProblem)
     return reduce(sum ∘ get_vars, prob.sub_problem; init = 0) +
@@ -172,7 +173,7 @@ get_vars(zero) = zero.vars  # default fallback for zero functions
 """
     get_eqns(prob)
 
-Return the number of equations defined in a problem.
+Return the number of equations defined in a problem, including monitor functions.
 """
 function get_eqns(prob::ContinuationProblem)
     return reduce(sum ∘ get_eqns, prob.sub_problem; init = 0) +
