@@ -177,6 +177,61 @@ function _generate_apply_function!(expr, func::Type{CF}, applyto,
     return expr
 end
 
+@generated function eval_zero_function!(res, func::ContinuationFunction, u, data, active,
+                                        monitor)
+    return _generate_eval_zero_function(func)
+end
+
+function _generate_eval_zero_function(func::Type{CF}) where {CF <: ContinuationFunction}
+    result = quote
+        j = 0
+    end
+    _generate_apply_function!(result.args, func, :zero,
+                              [
+                                  FuncPar(:func; cont_func = true),
+                                  FuncPar(:res; unwrap = true, append = true),
+                                  FuncPar(:u; unwrap = true),
+                                  FuncPar(:data, unwrap = true),
+                              ])
+    allmonitor_function = _generate_apply_function(func, :monitor,
+                                                   [
+                                                       FuncPar(:func; cont_func = true),
+                                                       FuncPar(:u; unwrap = true),
+                                                       FuncPar(:data, unwrap = true),
+                                                       FuncPar(:data, unwrap = true, append = true),
+                                                   ])
+    for (i, monitor_function) in enumerate(allmonitor_function)
+        push!(result.args,
+              :(monitor_val = active[$i] ? u.monitor[j += 1] : monitor[$i])) # could replace with ifelse and get (with default value);
+        # :(monitor_val = ifelse(active[$i], get(u.monitor, j += active[$i], zero(eltype(monitor))), monitor[$i])))  # almost works (doesn't work if u.monitor is missing, e.g., NamedTuple); TODO: benchmark any differences
+        push!(result.args,
+              :(res.monitor[$i] = $monitor_function - monitor_val))
+    end
+    push!(result.args, :(return res))
+    return result
+end
+
+@generated function eval_monitor_function!(res, func::ContinuationFunction, u, data)
+    return _generate_eval_monitor_function(func)
+end
+
+function _generate_eval_monitor_function(func::Type{CF}) where CF <: ContinuationFunction
+    result = quote end
+    allmonitor_function = _generate_apply_function(func, :monitor,
+                                                   [
+                                                       FuncPar(:func; cont_func = true),
+                                                       FuncPar(:u; unwrap = true),
+                                                       FuncPar(:data, unwrap = true),
+                                                       FuncPar(:data, unwrap = true, append = true),
+                                                   ])
+    for (i, monitor_function) in enumerate(allmonitor_function)
+        push!(result.args, :(res[$i] = $monitor_function))
+    end
+    push!(result.args, :(return res))
+    return result
+end
+
+
 """
     ContinuationData
 
@@ -256,56 +311,10 @@ function (cw::ContinuationWrapper)(res, u, p::ContinuationData)
     return res
 end
 
-@generated function eval_zero_function!(res, func::ContinuationFunction, u, data, active,
-                                        monitor)
-    return _generate_eval_zero_function(func)
+function get_initial(cw::ContinuationWrapper)
+    return (cw.u0, cw.p0)
 end
 
-function _generate_eval_zero_function(func::Type{CF}) where {CF <: ContinuationFunction}
-    result = quote
-        j = 0
-    end
-    _generate_apply_function!(result.args, func, :zero,
-                              [
-                                  FuncPar(:func; cont_func = true),
-                                  FuncPar(:res; unwrap = true, append = true),
-                                  FuncPar(:u; unwrap = true),
-                                  FuncPar(:data, unwrap = true),
-                              ])
-    allmonitor_function = _generate_apply_function(func, :monitor,
-                                                   [
-                                                       FuncPar(:func; cont_func = true),
-                                                       FuncPar(:u; unwrap = true),
-                                                       FuncPar(:data, unwrap = true),
-                                                       FuncPar(:data, unwrap = true, append = true),
-                                                   ])
-    for (i, monitor_function) in enumerate(allmonitor_function)
-        push!(result.args,
-              :(monitor_val = active[$i] ? u.monitor[j += 1] : monitor[$i])) # could replace with ifelse and get (with default value);
-        # :(monitor_val = ifelse(active[$i], get(u.monitor, j += active[$i], zero(eltype(monitor))), monitor[$i])))  # almost works (doesn't work if u.monitor is missing, e.g., NamedTuple); TODO: benchmark any differences
-        push!(result.args,
-              :(res.monitor[$i] = $monitor_function - monitor_val))
-    end
-    push!(result.args, :(return res))
-    return result
-end
-
-@generated function eval_monitor_function!(res, func::ContinuationFunction, u, data)
-    return _generate_eval_monitor_function(func)
-end
-
-function _generate_eval_monitor_function(func::Type{CF}) where CF <: ContinuationFunction
-    result = quote end
-    allmonitor_function = _generate_apply_function(func, :monitor,
-                                                   [
-                                                       FuncPar(:func; cont_func = true),
-                                                       FuncPar(:u; unwrap = true),
-                                                       FuncPar(:data, unwrap = true),
-                                                       FuncPar(:data, unwrap = true, append = true),
-                                                   ])
-    for (i, monitor_function) in enumerate(allmonitor_function)
-        push!(result.args, :(res[$i] = $monitor_function))
-    end
-    push!(result.args, :(return res))
-    return result
-end
+get_u_wrapper(cw::ContinuationWrapper) = cw.u_wrapper
+get_res_wrapper(cw::ContinuationWrapper) = cw.res_wrapper
+get_monitor_wrapper(cw::ContinuationWrapper) = cw.monitor_wrapper
