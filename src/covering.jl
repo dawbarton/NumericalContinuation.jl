@@ -66,7 +66,7 @@ function _continuation(f, u0, active; bounds, p0, solver, max_iters, s, h0, h_mi
     tangent[active] = 1
     pa = PseudoArclength(f, predicted, tangent)
     # Create the problem structure for the nonlinear solver
-    prob = NonlinearProblem(pa, u0, p0)
+    prob = NonlinearProblem{true}(pa, u0, p0)
     # Correct the initial solution
     sol = solve(prob, solver)
     # Check for convergence
