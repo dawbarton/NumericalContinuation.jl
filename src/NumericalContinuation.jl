@@ -4,7 +4,7 @@ using TestItems: @testitem
 using LinearAlgebra
 using ComponentArrays: ComponentVector, getaxes, label2index
 using Accessors: @optic, opcompose, PropertyLens, IndexLens
-using ForwardDiff
+using ForwardDiff: jacobian, jacobian!, JacobianConfig
 using NonlinearSolve: NonlinearProblem, solve, TrustRegion, ReturnCode
 
 const RESERVED_NAMES = Set([:zero, :monitor])
@@ -13,6 +13,7 @@ include("continuation_problem.jl")
 include("continuation_function.jl")
 include("algebraic_problems.jl")
 include("boundary_value_problems.jl")
+include("covering.jl")
 
 export test_problem1
 
@@ -30,21 +31,22 @@ function test_problem1(T = Float64)
     return prob
 end
 
-# prob = zero_problem(u -> [u.x^2 + u.y^2 - 1]; u0=ComponentArray(x=1.0, y=0.0))
-# prob = zero_problem(u -> [u[1]^2 + u[2]^2 - 1]; u0=[1.0, 0.0])
-# prob = periodic_orbit_problem(u -> [u[2], -u[1]]; u0=[1.0, 2.0], T=2.5)
+export test_problem2
 
-function trace_branch(prob)
-    chart = create_initial_chart(prob)
-    branch = create_branch(prob, chart)
-    ctr = 1
-    max_steps = get_option(prob, :max_steps)
-    while ctr < max_steps
-        pred = predict_from_chart(prob, chart)
-        chart = correct_chart(prob, chart)
-        push!(branch, chart)
-        ctr += 1
+function test_problem2(T = Float64)
+    function hopf!(res, u, p, t)
+        ss = u[1]^2 + u[2]^2
+        res[1] = p[1] * u[1] - u[2] + p[2] * u[1] * ss
+        res[2] = u[1] + p[1] * u[2] + p[2] * u[2] * ss
+        return res
     end
+
+    # Define initial solution
+    p0 = [1.0, -1.0]
+    t = range(0, 2π, length = 21)[1:(end - 1)]
+    u0 = 0.9.*[sqrt(p0[1]) .* sin.(t) -sqrt(p0[1]) .* cos.(t)]'
+    return NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0)
 end
+
 
 end
