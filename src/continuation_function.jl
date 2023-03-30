@@ -298,7 +298,7 @@ function ContinuationWrapper(func::ContinuationFunction, pars = nothing)
     end
     # Extend u0 with monitor function values
     u0_ext = ComponentVector(u0; monitor = monitor[active])
-    p0 = ContinuationData(Ref(data), collect(monitor), active)
+    p0 = ContinuationData(data, collect(monitor), active)
     return ContinuationWrapper(prob, func, Base.Fix2(ComponentVector, getaxes(u0_ext)),
                                Base.Fix2(ComponentVector, getaxes(res_layout)),
                                Base.Fix2(ComponentVector, getaxes(monitor)), monitor_names,
@@ -308,7 +308,7 @@ end
 function (cw::ContinuationWrapper)(res, u, p::ContinuationData)
     _u = cw.u_wrapper(u)
     _res = cw.res_wrapper(res)
-    eval_zero_function!(_res, cw.func, _u, p.data[], p.active, p.monitor)
+    eval_zero_function!(_res, cw.func, _u, p.data, p.active, p.monitor)
     return res
 end
 
