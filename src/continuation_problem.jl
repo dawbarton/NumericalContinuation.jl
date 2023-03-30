@@ -184,6 +184,29 @@ end
 get_eqns(zero) = zero.eqns  # default fallback for zero functions
 
 """
+    get_eltype(prob)
+
+Return the eltype of the initial state of a problem.
+"""
+function get_eltype(prob::ContinuationProblem)
+    # Could use `reduce(promote_type, map(get_eltype, prob.sub_problem); init=Union{})` but it allocates
+    T = Union{}
+    # Sub-problems
+    for sub_prob in prob.sub_problem
+        T = promote_type(get_eltype(sub_prob), T)
+    end
+    # Zero function
+    return promote_type(get_eltype(prob.zero_function!), T)
+end
+
+get_eltype(::ContinuationProblem, zero) = get_eltype(zero.u0)  # default fallback for zero function
+
+get_eltype(arr) = eltype(arr)
+function get_eltype(tpl::Union{Tuple, NamedTuple})
+    reduce(promote_type, map(get_eltype, tpl); init = Union{})
+end
+
+"""
     get_initial(prob)
 
 Return a tuple of the initial values of the state vector, and chart data, as (potentially

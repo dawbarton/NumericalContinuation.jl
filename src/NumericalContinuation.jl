@@ -2,10 +2,11 @@ module NumericalContinuation
 
 using TestItems: @testitem
 using LinearAlgebra
-using ComponentArrays: ComponentVector, getaxes, label2index
+using ComponentArrays: ComponentVector, getaxes
 using Accessors: @optic, opcompose, PropertyLens, IndexLens
 using ForwardDiff: jacobian, jacobian!, JacobianConfig
-using NonlinearSolve: NonlinearProblem, solve, TrustRegion, ReturnCode
+using SciMLBase: SciMLBase
+using NonlinearSolve: NonlinearProblem, init, solve!, NewtonRaphson, TrustRegion, ReturnCode
 
 const RESERVED_NAMES = Set([:zero, :monitor])
 
@@ -44,9 +45,8 @@ function test_problem2(T = Float64)
     # Define initial solution
     p0 = [1.0, -1.0]
     t = range(0, 2π, length = 21)[1:(end - 1)]
-    u0 = 0.9.*[sqrt(p0[1]) .* sin.(t) -sqrt(p0[1]) .* cos.(t)]'
+    u0 = 0.9 .* [sqrt(p0[1]) .* sin.(t) -sqrt(p0[1]) .* cos.(t)]'
     return NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0)
 end
-
 
 end
