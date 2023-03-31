@@ -5,16 +5,25 @@ using LinearAlgebra
 using ComponentArrays: ComponentVector, getaxes
 using Accessors: @optic, opcompose, PropertyLens, IndexLens
 using ForwardDiff: jacobian, jacobian!, JacobianConfig
-using SciMLBase: SciMLBase
-using NonlinearSolve: NonlinearProblem, init, solve!, NewtonRaphson, TrustRegion, ReturnCode
+using SciMLBase: SciMLBase, solve
+using NonlinearSolve: NonlinearSolve, NonlinearProblem, init, reinit!, solve!, NewtonRaphson, TrustRegion, ReturnCode
+using PreallocationTools: DiffCache, get_tmp
 
 const RESERVED_NAMES = Set([:zero, :monitor])
+
+export solve, PseudoArclength
 
 include("continuation_problem.jl")
 include("continuation_function.jl")
 include("algebraic_problems.jl")
 include("boundary_value_problems.jl")
 include("covering.jl")
+
+export test_problem0
+
+function test_problem0(T = Float64)
+    return algebraic_problem((u, p) -> [u[1]^3 - u[1] - p[1]], T[1], T[0])
+end
 
 export test_problem1
 
