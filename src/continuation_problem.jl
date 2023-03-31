@@ -405,7 +405,7 @@ add_parameters!(prob, :p, [:a, :b])  # adds a = u.zero.p.a and b = u.zero.p.b
 function add_parameters!(prob::ContinuationProblem, name::Symbol, indices; active = false)
     for idx in indices
         if idx isa Symbol
-            add_parameter!(prob, Symbol(name, idx),
+            add_parameter!(prob, Symbol(idx),
                            opcompose(PropertyLens(:zero), PropertyLens(name),
                                      PropertyLens(idx)); active = active)
         else

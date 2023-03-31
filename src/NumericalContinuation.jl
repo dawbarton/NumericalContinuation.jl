@@ -54,8 +54,28 @@ function test_problem2(T = Float64)
     # Define initial solution
     p0 = [1.0, -1.0]
     t = range(0, 2π, length = 21)[1:(end - 1)]
-    u0 = 0.9 .* [sqrt(p0[1]) .* sin.(t) -sqrt(p0[1]) .* cos.(t)]'
-    return NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0)
+    u0 = 0.9 .* [sqrt(p0[1]) .* cos.(t) sqrt(p0[1]) .* sin.(t)]'
+    prob = NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0; phase=false)
+    # Don't use the integral phase condition; fix u[2] = 0 instead
+    add_parameter!(prob, :phase, @optic _.zero.u[2]; value = 0)
+    return prob
+end
+
+export test_problem3
+
+function duffing!(du, u, p, t)
+    du[1] = u[2]
+    du[2] = p.Γ * sin(p.ω * t + p.ϕ) - p.ξ * u[2] - p.k * u[1] - p.k₃ * u[1]^3
+end
+
+function test_problem3()
+    t = range(0, 2π, length = 21)[1:(end - 1)]
+    p0 = (Γ = 1.0, ω = 0.1, ϕ = π/2, ξ = 0.05, k = 1.0, k₃ = 0.1)
+    u0 = collect([cos.(t) p0.ω .* .-sin.(t)]')
+    prob = NumericalContinuation.fourier_collocation(duffing!, u0, (0, 2π/p0.ω), p0; phase=false)
+    add_parameter!(prob, :period, u -> u.zero.tspan[2] - 2π/u.zero.p.ω; value = 0)
+    add_parameter!(prob, :phase, @optic _.zero.u[2]; value = 0)
+    return prob
 end
 
 end

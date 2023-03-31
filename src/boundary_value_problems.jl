@@ -67,7 +67,7 @@ struct FourierCollocation{F, T}
     end
 end
 
-function (fourier::FourierCollocation)(res, uu, data; kwargs...)
+function (fourier::FourierCollocation{F, TT})(res, uu, data; kwargs...) where {F, TT}
     u = uu.zero
     # TODO: work out if there are any allocations left in here
     # Calculate the right-hand side
@@ -82,7 +82,7 @@ function (fourier::FourierCollocation)(res, uu, data; kwargs...)
     # Compute the difference of the time derivatives using a Fourier differentiation matrix
     u_mat = reshape(u.u, (fourier.ndim, fourier.nmesh))
     res_mat = reshape(res, (fourier.ndim, fourier.nmesh))
-    mul!(res_mat, u_mat, fourier.Dt, -1.0, 1.0)
+    mul!(res_mat, u_mat, fourier.Dt, -one(TT), one(TT))
     return res
 end
 

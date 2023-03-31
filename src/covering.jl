@@ -111,8 +111,17 @@ function SciMLBase.init(prob::ContinuationProblem, alg::PseudoArclength,
     if length(u0) != n
         throw(DimensionMismatch("Equations and unknowns must match: currently $n equations and $(length(u0)) unknowns"))
     end
+    # Determine the primary continuation parameter
     chart_next.u .= u0
-    chart_next.ts[end] = one(T)
+    if pars !== nothing && !isempty(pars)
+        primary = pars[1]
+        n_active = count(p0.active)
+        p_active = findfirst(==(primary), f.monitor_names[p0.active])
+        chart_next.ts[end - n_active + p_active] = one(T)
+    else
+        # No parameters, so use the final unknown
+        chart_next.ts[end] = one(T)
+    end
     # Construct the nonlinear solver
     nl_solver = init(NonlinearProblem{true}(f, u0, p0), alg.nl_solver)
     return PseudoArclengthCache{T, typeof(f), typeof(nl_solver)}(pa_prob, f, nl_solver,
@@ -133,7 +142,7 @@ function SciMLBase.solve!(cache::PseudoArclengthCache)
         cache.force_stop[] || save_chart!(cache)
         cache.step[] += 1
     end
-    return cache.atlas
+    return [chart.u for chart in cache.atlas]
 end
 
 function initial_correct!(cache::PseudoArclengthCache)
@@ -173,6 +182,7 @@ function tangent_space!(ts, nl_solver)
     for i in axes(nl_solver.J, 2)
         nl_solver.J[end, i] = 0  # zero out the pseudo-arclength condition
     end
+    # TODO: could replace this with geqrt! from FastLapackInterface with a preallocated workspace
     null = qr!(nl_solver.J')
     ts .= null.Q[:, end]
     return ts
