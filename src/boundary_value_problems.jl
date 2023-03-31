@@ -93,7 +93,7 @@ struct PhaseCondition{U}
 end
 
 # Fourier integration matrix is simply the trapezium rule
-(pc::PhaseCondition)(u) = dot(pc.du, u.u)
+(pc::PhaseCondition)(u, p) = dot(pc.du, u)
 
 """
     fourier_collocation(f, u, tspan, [p]; [t0], [eqns])
@@ -156,13 +156,15 @@ function fourier_collocation(f, u, tspan, p = (); t0 = 0, phase = true, eqns = n
     add_parameters!(prob, :p, keys(p))
     # Fix start time
     if t0 !== nothing
-        add_parameter!(prob, :t0, @optic(_.tspan[begin]); value = t0)
+        add_parameter!(prob, :t0, @optic(_.zero.tspan[begin]); value = t0)
     end
     # Add phase condition
     if phase
         # TODO: should this be normalised?
         du = vec((u * fcprob.Dt) .* (1 / fcprob.nmesh))  # time derivative of initial solution scaled by the number of mesh points
-        add_parameter!(prob, :phase, PhaseCondition(du); value = 0)
+        add_monitor_function!(prob, :phase,
+                              monitor_function(PhaseCondition(du); active = false,
+                                               value = 0))
     end
     return prob
 end

@@ -245,6 +245,9 @@ struct ContinuationData{T, D}
     active::Vector{Bool}
 end
 
+# TODO: consider shifting the wrappers in ContinuationWrapper into ContinuationData to allow
+# for resizing of u and res
+
 """
     ContinuationWrapper
 

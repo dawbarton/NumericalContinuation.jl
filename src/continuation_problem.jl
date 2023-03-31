@@ -196,12 +196,13 @@ function get_eltype(prob::ContinuationProblem)
         T = promote_type(get_eltype(sub_prob), T)
     end
     # Zero function
-    return promote_type(get_eltype(prob.zero_function!), T)
+    return promote_type(get_eltype(prob, prob.zero_function!), T)
 end
 
 get_eltype(::ContinuationProblem, zero) = get_eltype(zero.u0)  # default fallback for zero function
 
 get_eltype(arr) = eltype(arr)
+
 function get_eltype(tpl::Union{Tuple, NamedTuple})
     reduce(promote_type, map(get_eltype, tpl); init = Union{})
 end
@@ -305,24 +306,45 @@ end
 # Default fallback for monitor functions that follow the MonitorFunction interface
 get_initial_active(::ContinuationProblem, mfunc) = mfunc.initial_active
 
-struct MonitorFunction{P, F}
+struct MonitorFunction{D, P, F}
     f::F
     initial_value::Any
     initial_active::Bool
-    MonitorFunction(f, value, active, pars) = new{pars, typeof(f)}(f, value, active)
+    function MonitorFunction(f, value, active, data = false, pars = false)
+        return new{data, pars, typeof(f)}(f, value, active)
+    end
 end
 
-(monitor::MonitorFunction{false})(u, data, mdata; kwargs...) = monitor.f(u.zero)
-(monitor::MonitorFunction{true})(u, data, mdata; kwargs...) = monitor.f(u.zero.u, u.zero.p)
+(monitor::MonitorFunction{false, false})(u, data, mdata; kwargs...) = monitor.f(u)
+
+function (monitor::MonitorFunction{true, false})(u, data, mdata; kwargs...)
+    return monitor.f(u, data, mdata)
+end
+
+function (monitor::MonitorFunction{false, true})(u, data, mdata; kwargs...)
+    return monitor.f(u.zero.u, u.zero.p)
+end
+
+function (monitor::MonitorFunction{true, true})(u, data, mdata; kwargs...)
+    return monitor.f(u.zero.u, u.zero.p, data, mdata)
+end
 
 """
-    monitor_function(f; value = nothing, active = false, pars = true)
+    monitor_function(f; value = nothing, active = false, data = false, pars = false)
 
-Wrap a function of the form `f(u, p)` (if `pars` is `true`) or `f(u)` (if `pars` is `false`)
-in a monitor function compatible form. The initial value of the monitor function may be
-provided in `value` and whether the monitor function is active is determined by `active`.
+Wrap a function of the form `f(u)` (or `f(u, p)` if `pars` is true) in a monitor
+function-compatible form. The initial value of the monitor function may be provided in
+`value` and whether the monitor function is active is determined by `active`.
+
+If `value` is not provided, the monitor function will be called with the initial state to
+determine the initial value.
+
+If chart data is required, `data` should be set to `true`. In this case, the monitor
+function will be called with the form `f(u, data, mdata)` (or `f(u, p, data, mdata)` if
+`pars` is true), where `data` is all the problem data and `mdata` is the monitor function
+data.
 """
-function monitor_function(f; value = nothing, active = false, pars = nothing)
+function monitor_function(f; value = nothing, active = false, data = false, pars = nothing)
     if pars === nothing
         _pars = false
         for method in methods(f)
@@ -334,20 +356,25 @@ function monitor_function(f; value = nothing, active = false, pars = nothing)
     else
         _pars = pars
     end
-    MonitorFunction(f, value, active, _pars)
+    return MonitorFunction(f, value, active, data, _pars)
 end
 
 """
-    add_parameter!(prob, name, func)
+    add_parameter!(prob, name, func; active = false, value = nothing)
 
 Add a continuation parameter `name` to a continuation problem. Parameters should be
-specified as function that maps the state vector to the parameter position.
+specified as function that takes the entire state vector and returns the parameter.
+
+Parameters can be marked as active or inactive. If a parameter is inactive, it will not be
+allowed to change from the initial value. If a parameter is active, it will be allowed to
+change from the initial value. The initial value of the parameter can be specified in
+`value`.
 
 # Examples
 
 ```julia
-add_parameter!(prob, :α, @optic(_[7]))  # parameter α corresponds to u[7]
-add_parameter!(prob, :p, @optic(_.p[1]))  # parameter p corresponds to u.p[1]
+add_parameter!(prob, :α, @optic(_.zero[7]))  # parameter α corresponds to u.zero[7]
+add_parameter!(prob, :p, @optic(_.zero.p[1]))  # parameter p corresponds to u.zero.p[1]
 ```
 """
 function add_parameter! end
@@ -355,14 +382,37 @@ function add_parameter! end
 function add_parameter!(prob::ContinuationProblem, name::Symbol, lens; active = false,
                         value = nothing)
     add_monitor_function!(prob, name,
-                          monitor_function(lens; active = active, pars = false,
-                                           value = value))
+                          monitor_function(lens; active = active, value = value,
+                                           pars = false))
 end
 
+"""
+    add_parameters!(prob, name, indices; active = false)
+
+A convenience wrapper for `add_parameter!` that adds multiple parameters at once. It
+automatically constructs the parameter mapping based on the name and indices provided.
+
+It is assumed that the parameters are part of the state vector from the zero function (i.e.,
+not from a sub-problem) and so the parameters are prefixed with `zero`.
+
+# Examples
+
+```julia
+add_parameters!(prob, :p, 1:2)  # adds p1 = u.zero.p[1] and p2 = u.zero.p[2]
+add_parameters!(prob, :p, [:a, :b])  # adds a = u.zero.p.a and b = u.zero.p.b
+```
+"""
 function add_parameters!(prob::ContinuationProblem, name::Symbol, indices; active = false)
     for idx in indices
-        add_parameter!(prob, Symbol(name, idx),
-                       opcompose(PropertyLens(name), IndexLens(idx)); active = active)
+        if idx isa Symbol
+            add_parameter!(prob, Symbol(name, idx),
+                           opcompose(PropertyLens(:zero), PropertyLens(name),
+                                     PropertyLens(idx)); active = active)
+        else
+            add_parameter!(prob, Symbol(name, idx),
+                           opcompose(PropertyLens(:zero), PropertyLens(name),
+                                     IndexLens(idx)); active = active)
+        end
     end
     return prob
 end
