@@ -1,13 +1,19 @@
 module NumericalContinuation
 
+# TODO: the _.zero I added to add_parameter! is going to conflict with the different calling
+# conventions of monitor_function (i.e., f(u) versus f(u, p)); maybe shift the parameters to
+# add_parameter! as a closer-to-the-user function
+
 using TestItems: @testitem
 using LinearAlgebra
 using ComponentArrays: ComponentVector, getaxes
 using Accessors: @optic, opcompose, PropertyLens, IndexLens
 using ForwardDiff: jacobian, jacobian!, JacobianConfig
 using SciMLBase: SciMLBase, solve
-using NonlinearSolve: NonlinearSolve, NonlinearProblem, init, reinit!, solve!, NewtonRaphson, TrustRegion, ReturnCode
+using NonlinearSolve: NonlinearSolve, NonlinearProblem, init, reinit!, solve!,
+                      NewtonRaphson, TrustRegion, ReturnCode
 using PreallocationTools: DiffCache, get_tmp
+using FFTW: ifft!
 
 const RESERVED_NAMES = Set([:zero, :monitor])
 
@@ -55,9 +61,9 @@ function test_problem2(T = Float64)
     p0 = [1.0, -1.0]
     t = range(0, 2π, length = 21)[1:(end - 1)]
     u0 = 0.9 .* [sqrt(p0[1]) .* cos.(t) sqrt(p0[1]) .* sin.(t)]'
-    prob = NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0; phase=false)
+    prob = NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0; phase = false)
     # Don't use the integral phase condition; fix u[2] = 0 instead
-    add_parameter!(prob, :phase, @optic _.zero.u[2]; value = 0)
+    add_parameter!(prob, :phase, @optic _.u[2]; value = 0)
     return prob
 end
 
@@ -70,11 +76,12 @@ end
 
 function test_problem3()
     t = range(0, 2π, length = 21)[1:(end - 1)]
-    p0 = (Γ = 1.0, ω = 0.1, ϕ = π/2, ξ = 0.05, k = 1.0, k₃ = 0.1)
+    p0 = (Γ = 1.0, ω = 0.1, ϕ = π / 2, ξ = 0.05, k = 1.0, k₃ = 0.1)
     u0 = collect([cos.(t) p0.ω .* .-sin.(t)]')
-    prob = NumericalContinuation.fourier_collocation(duffing!, u0, (0, 2π/p0.ω), p0; phase=false)
-    add_parameter!(prob, :period, u -> u.zero.tspan[2] - 2π/u.zero.p.ω; value = 0)
-    add_parameter!(prob, :phase, @optic _.zero.u[2]; value = 0)
+    prob = NumericalContinuation.fourier_collocation(duffing!, u0, (0, 2π / p0.ω), p0;
+                                                     phase = false)
+    add_parameter!(prob, :period, u -> u.tspan[2] - 2π / u.p.ω; value = 0)
+    add_parameter!(prob, :phase, @optic _.u[2]; value = 0)
     return prob
 end
 

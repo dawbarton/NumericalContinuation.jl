@@ -54,7 +54,7 @@ struct FourierCollocation{F, T}
     function FourierCollocation(f, u, tspan, p = (), eqns = missing)
         length(tspan) == 2 || throw(ArgumentError("tspan must contain two values"))
         # If needed, call the function to see how many outputs it returns
-        ndim = ismissing(eqns) ? length(f(u[:, begin], p, tspan[begin])) : eqns
+        ndim = ismissing(eqns) ? size(u, 1) : eqns
         _f = IIPWrapper(f, 3)  # Ensure that the function has an in-place form
         T = eltype(u)
         nmesh = size(u, 2)
@@ -93,7 +93,7 @@ struct PhaseCondition{U}
 end
 
 # Fourier integration matrix is simply the trapezium rule
-(pc::PhaseCondition)(u, p) = dot(pc.du, u)
+(pc::PhaseCondition)(u) = dot(pc.du, u.zero.u)
 
 """
     fourier_collocation(f, u, tspan, [p]; [t0], [eqns])
@@ -148,15 +148,14 @@ prob = fourier_collocation(hopf!, u, tspan, p)
 
 ```
 """
-function fourier_collocation(f, u, tspan, p = (); t0 = 0, phase = true, eqns = nothing)
-    _eqns = eqns === nothing ? size(u, 1) : eqns
-    fcprob = FourierCollocation(f, u, tspan, p, _eqns)
+function fourier_collocation(f, u, tspan, p = (); t0 = 0, phase = true, eqns = missing)
+    fcprob = FourierCollocation(f, u, tspan, p, eqns)
     prob = ContinuationProblem(fcprob)
     # Add continuation parameters (all inactive to start with)
     add_parameters!(prob, :p, keys(p))
     # Fix start time
     if t0 !== nothing
-        add_parameter!(prob, :t0, @optic(_.zero.tspan[begin]); value = t0)
+        add_parameter!(prob, :t0, @optic(_.tspan[begin]); value = t0)
     end
     # Add phase condition
     if phase
@@ -206,4 +205,84 @@ end
     # Evaluate
     NumericalContinuation.eval_zero_function!(res, func, u, data, active, monitor)
     @test norm(res) < 1e-12
+end
+
+function gauss_legendre(T, n)
+    if n == 1
+        x = T[0]
+        w = T[2]
+    elseif n == 2
+        x = T[-T(1) / sqrt(T(3)), +T(1) / sqrt(T(3))]
+        w = T[1, 1]
+    elseif n == 3
+        x = T[-sqrt(T(3) / T(5)), T(0), +sqrt(T(3) / T(5))]
+        w = T[T(5) / T(9), T(8) / T(9), T(5) / T(9)]
+    elseif n == 4
+        x = T[-sqrt((T(3) + T(2) * sqrt(T(6) / T(5))) / T(7)),
+              -sqrt((T(3) - T(2) * sqrt(T(6) / T(5))) / T(7)),
+              +sqrt((T(3) - T(2) * sqrt(T(6) / T(5))) / T(7)),
+              +sqrt((T(3) + T(2) * sqrt(T(6) / T(5))) / T(7))]
+        w = T[(T(18) - sqrt(T(30))) / T(36), (T(18) + sqrt(T(30))) / T(36),
+              (T(18) + sqrt(T(30))) / T(36), (T(18) - sqrt(T(30))) / T(36)]
+    elseif n == 5
+        x = T[-sqrt((T(5) + T(2) * sqrt(T(10) / T(7))) / T(9)),
+              -sqrt((T(5) - T(2) * sqrt(T(10) / T(7))) / T(9)),
+              T(0),
+              +sqrt((T(5) - T(2) * sqrt(T(10) / T(7))) / T(9)),
+              +sqrt((T(5) + T(2) * sqrt(T(10) / T(7))) / T(9))]
+        w = T[(T(322) - T(13) * sqrt(T(70))) / T(900),
+              (T(322) + T(13) * sqrt(T(70))) / T(900),
+              T(128) / T(225),
+              (T(322) + T(13) * sqrt(T(70))) / T(900),
+              (T(322) - T(13) * sqrt(T(70))) / T(900)]
+    else
+        error("Gauss-Legendre quadrature not implemented for n = $n")
+    end
+    l = sqrt.((1 .- x .^ 2) .* w)
+    @views l[2:2:end] .= -l[2:2:end]
+    return (x, w, l)
+end
+
+struct OrthogonalCollocation{F, T}
+    f::F
+    u0::Any
+    vars::Int
+    eqns::Int
+    ndim::Int
+    nmesh::Int
+    In::Matrix{T}
+    Dt::Matrix{T}
+    function OrthogonalCollocation(f, u, tspan, p = (), eqns = missing)
+        length(tspan) == 2 || throw(ArgumentError("tspan must contain two values"))
+        # If needed, call the function to see how many outputs it returns
+        ndim = ismissing(eqns) ? length(f(u[:, begin], p, tspan[begin])) : eqns
+        _f = IIPWrapper(f, 3)  # Ensure that the function has an in-place form
+        T = eltype(u)
+        nmesh = size(u, 2)
+        Dt = fourier_diff(T, nmesh) .* -2π  # Scale to [0, 1] and transpose (negative = transpose)
+        _vars = nmesh * ndim + length(p) + 2
+        _eqns = nmesh * ndim
+        return new{typeof(_f), T}(_f,
+                                  (u = vec(u), p = p, tspan = [tspan[begin], tspan[end]]),
+                                  _vars, _eqns, ndim, nmesh, Dt)
+    end
+end
+
+function (fourier::OrthogonalCollocation{F, TT})(res, uu, data; kwargs...) where {F, TT}
+    u = uu.zero
+    # TODO: work out if there are any allocations left in here
+    # Calculate the right-hand side
+    T = u.tspan[end] - u.tspan[begin]
+    t = range(u.tspan[begin], u.tspan[end], fourier.nmesh + 1)  # plus one because the final time value is not stored in the state vector (Fourier assumes periodicity)
+    idx = 1:(fourier.ndim)
+    for i in 1:(fourier.nmesh)
+        fourier.f(view(res, idx), view(u.u, idx), u.p, t[i])
+        @views res[idx] .*= T
+        idx = idx .+ fourier.ndim
+    end
+    # Compute the difference of the time derivatives using a Fourier differentiation matrix
+    u_mat = reshape(u.u, (fourier.ndim, fourier.nmesh))
+    res_mat = reshape(res, (fourier.ndim, fourier.nmesh))
+    mul!(res_mat, u_mat, fourier.Dt, -one(TT), one(TT))
+    return res
 end
