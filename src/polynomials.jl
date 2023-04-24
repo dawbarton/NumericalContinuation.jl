@@ -4,6 +4,12 @@
 #
 # Also see: Chebfun (legpts.m, chebpts.m)
 
+"""
+    OrthogonalPolynomial{T}
+
+Represents an orthogonal polynomial with underlying numerical type `T`. Enables fast
+interpolation, differentiation, and integration. The domain is generally taken as [-1, +1].
+"""
 struct OrthogonalPolynomial{T}
     "Nodes of the polynomial"
     nodes::Vector{T}
@@ -15,9 +21,34 @@ struct OrthogonalPolynomial{T}
     closed::Bool
 end
 
+"""
+    nodes(poly::OrthogonalPolynomial)
+
+Returns the nodes of the polynomial.
+"""
 nodes(poly::OrthogonalPolynomial) = poly.nodes
+
+"""
+    barycentric_weights(poly::OrthogonalPolynomial)
+
+Returns the weights for the barycentric interpolation formula.
+"""
 barycentric_weights(poly::OrthogonalPolynomial) = poly.bary_weights
+
+"""
+    quadrature_weights(poly::OrthogonalPolynomial)
+
+Returns the weights for the corresponding quadrature formula.
+"""
 quadrature_weights(poly::OrthogonalPolynomial) = poly.quad_weights
+
+"""
+    is_closed_interval(poly::OrthogonalPolynomial)
+
+Returns `true` if the domain is closed (i.e., the end points of the domain are a node of the
+polynomical), `false` otherwise.
+"""
+is_closed_interval(poly::OrthogonalPolynomial) = poly.closed
 
 function chebyshev_nodes(T, n::Integer)
     return T[-cospi(T(j) / n) for j in 0:n]
@@ -59,6 +90,12 @@ function chebyshev_quadrature_weights(T, n::Integer)
     end
 end
 
+"""
+    chebyshev([T], n::Integer)
+
+Return an `OrthogonalPolynomial` representing the Chebyshev polynomial of the second kind
+with order `n`.
+"""
 function chebyshev(T, n::Integer)
     return OrthogonalPolynomial{T}(
         chebyshev_nodes(T, n),
@@ -113,6 +150,12 @@ function equispaced_quadrature_weights(T, n::Integer)
     return h .* T.(NEWTON_COTES_NUM[n]) ./ T.(NEWTON_COTES_DENOM[n])
 end
 
+"""
+    equispaced([T], n::Integer)
+
+Return an `OrthogonalPolynomial` representing the a Lagrange polynomial with equispaced
+nodes of order `n`.
+"""
 function equispaced(T, n::Integer)
     return OrthogonalPolynomial{T}(
         equispaced_nodes(T, n),
@@ -146,6 +189,11 @@ const lagrange = equispaced
     end
 end
 
+"""
+    legendre([T], n::Integer)
+
+Return an `OrthogonalPolynomial` representing the Legendre polynomials of order `n`.
+"""
 function legendre(T, n::Integer)
     (x, w) = gauss(T, n + 1)
     l = T[(2*isodd(i)-1)*sqrt((1-x[i]^2)*w[i]) for i in eachindex(x)]
