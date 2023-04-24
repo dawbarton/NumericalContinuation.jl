@@ -24,7 +24,8 @@ include("continuation_problem.jl")
 include("continuation_function.jl")
 include("algebraic_problems.jl")
 include("polynomials.jl")
-include("boundary_value_problems.jl")
+include("polynomial_collocation.jl")
+include("fourier_collocation.jl")
 include("covering.jl")
 
 export test_problem0

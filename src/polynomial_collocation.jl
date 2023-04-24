@@ -1,4 +1,4 @@
-struct OrthogonalCollocation{T, F}
+struct PolynomialCollocation{T, F}
     f!::F
     u0::Any
     vars::Int
@@ -19,10 +19,10 @@ struct OrthogonalCollocation{T, F}
     phase_du::Matrix{T} # Time derivative of u (chart data)
 end
 
-function OrthogonalCollocation(f, u, tspan, p = (); phase::Bool = true,
-                                ncoll::Integer = 4,
-                                nmesh::Union{Missing, Integer} = missing,
-                                repr = equispaced, coll = legendre)
+function PolynomialCollocation(f, u, tspan, p = (); phase::Bool = true,
+                               ncoll::Integer = 4,
+                               nmesh::Union{Missing, Integer} = missing,
+                               repr = equispaced, coll = legendre)
     length(tspan) == 2 || throw(ArgumentError("tspan must contain two values"))
     if u isa AbstractArray
         ndims(u) == 2 || throw(ArgumentError("u must be a matrix"))
@@ -74,32 +74,35 @@ function OrthogonalCollocation(f, u, tspan, p = (); phase::Bool = true,
     end
 
     if phase
-        du = Matrix{T}(undef, ndim, nmesh * ncoll)
+        phase_du = Matrix{T}(undef, ndim, nmesh * ncoll)
         i0 = 1
         i1 = ncoll
         for i in Base.OneTo(nmesh)
-            @views mul!(du[:, i0:i1], uu[:, i0:i1 + 1], InDt)
+            @views mul!(phase_du[:, i0:i1], uu[:, i0:(i1 + 1)], InDt)
             i0 += ncoll
             i1 += ncoll
         end
-        du ./= norm(vec(du))
+        phase_du ./= norm(phase_du)
     else
-        du = zeros(T, ndim, nmesh * ncoll)
+        phase_du = zeros(T, ndim, nmesh * ncoll)
     end
 
     u_tmp = DiffCache(Vector{T}(undef, ndim))
 
-    return OrthogonalCollocation{T, typeof(_f)}(_f, (u = _u, p = p, tspan = [tspan[begin], tspan[end]]),
-                                _vars, _eqns, ndim, nmesh, ncoll, repr_poly, coll_poly,
-                                repr_pts, coll_pts, In, Dt, InDt, phase, u_tmp, h, du)
+    return PolynomialCollocation{T, typeof(_f)}(_f,
+                                                (u = _u, p = p,
+                                                 tspan = [tspan[begin], tspan[end]]),
+                                                _vars, _eqns, ndim, nmesh, ncoll, repr_poly,
+                                                coll_poly, repr_pts, coll_pts, In, Dt, InDt,
+                                                phase, u_tmp, h, phase_du)
 end
 
-function (coll::OrthogonalCollocation{S})(res, uu, data; kwargs...) where {S}
+function (coll::PolynomialCollocation{S})(res, uu, data; kwargs...) where {S}
     u = uu.zero
-    # TODO: work out if there are any allocations left in here
     U = reshape(u.u, (coll.ndim, coll.nmesh * coll.ncoll + 1))
     u_tmp = get_tmp(coll.u_tmp, u.u)
-    res_mat = reshape(@view(res[1:coll.ndim * coll.nmesh * coll.ncoll]), (coll.ndim, coll.nmesh * coll.ncoll))
+    res_mat = reshape(@view(res[1:(coll.ndim * coll.nmesh * coll.ncoll)]),
+                      (coll.ndim, coll.nmesh * coll.ncoll))
     T = u.tspan[end] - u.tspan[begin]
     t0 = u.tspan[begin]
     i0 = 1
@@ -107,16 +110,20 @@ function (coll::OrthogonalCollocation{S})(res, uu, data; kwargs...) where {S}
     phase = zero(S)
     for i in Base.OneTo(coll.nmesh)
         for j in Base.OneTo(coll.ncoll)
-            @views mul!(u_tmp, U[:, i0:i1+1], coll.In[:, j])  # interpolate to find u at the collocation point
-            coll.f!(@view(res_mat[:, i0 + j - 1]), u_tmp, u.p, t0 + coll.repr_pts[j]*T)
-            @views mul!(res_mat[:, i0 + j - 1], U[:, i0:i1+1], coll.InDt[:, j], -one(S), T*coll.h[j])  # compute the time derivative of u at the collocation point
+            # interpolate to find u at the collocation point
+            @views mul!(u_tmp, U[:, i0:(i1 + 1)], coll.In[:, j])
+            # evaluate the function at the collocation point (multiplied by the period in the next step)
+            coll.f!(@view(res_mat[:, i0 + j - 1]), u_tmp, u.p, t0 + coll.repr_pts[j] * T)
+            # compute the time derivative of u at the collocation point and subtract from the residual
+            @views mul!(res_mat[:, i0 + j - 1], U[:, i0:(i1 + 1)], coll.InDt[:, j], -one(S),
+                        T * coll.h[j])
             for k in Base.OneTo(coll.ndim)
                 phase += coll.phase_du[k, i0 + j - 1] * u_tmp[k]
             end
         end
         i0 += coll.ncoll
         i1 += coll.ncoll
-        t0 += coll.h[i]*T
+        t0 += coll.h[i] * T
     end
     if coll.phase
         res[end] = phase
@@ -125,17 +132,26 @@ function (coll::OrthogonalCollocation{S})(res, uu, data; kwargs...) where {S}
 end
 
 """
-    fourier_collocation(f, u, tspan, [p]; [t0], [eqns])
+    polynomial_collocation(f, u, tspan, [p];
+                           [phase = true], [t0 = 0], [ncol = 4], [nmesh],
+                           [repr = equispaced], [coll = legendre])
 
-Implement a Fourier-based collocation scheme for discretising a periodic orbit. The vector
-field `f` is assumed to be of the same form as used in the SciML/DiffEq ecosystem, i.e.,
-`f(u, p, t)`, where `u` is the state vector, `p` are the (continuation) parameters, and `t`
-is time.
+Implement an orthogonal polynomial-based collocation scheme for discretising a periodic
+orbit. The vector field `f` is assumed to be of the same form as used in the SciML/DiffEq
+ecosystem, i.e., `f(u, p, t)`, where `u` is the state vector, `p` are the (continuation)
+parameters, and `t` is time.
 
-The state vector `u` is assumed to be a matrix; the columns are the state vectors at
-different times. The times are assumed to equispaced between `tspan[1]` and `tspan[2]`. The
-final state vector at `tspan[2]` is omitted (due to periodicity it is the same as at
-`tspan[1]`).
+The time interval is discretised into `nmesh` intervals, each of which is represented by a
+polynomial of order `ncoll`.
+
+The state `u` is either a matrix or a function `u(t)`.
+
+If `u` is a matrix, the columns are the state vectors at different times. The times are
+assumed to equispaced between `tspan[1]` and `tspan[2]`. The number of mesh intervals is
+inferred from the number of columns (i.e., size(u, 2) == nmesh * ncoll + 1).
+
+If `u` is a function, it is called with the times at the representation points to return the
+state vector at those times. In this case `nmesh` must be specified.
 
 Note that all parameters in `p` are added as (initially inactive) continuation parameters.
 If your problem has many parameters that are not likely to be used for continuation, it can
@@ -145,8 +161,7 @@ data.
 By default, the start time `t0` is fixed as zero. This can be changed to be any numerical
 value consistent with the problem, or removed entirely by setting `t0 = nothing`.
 
-The number of (first-order) differential equations is specified by `eqns`; by default this
-is assumed equal to `length(u[:, begin])` but can be overridden if needed.
+The representation points are by default equispaced
 
 # Example
 
@@ -170,16 +185,12 @@ odeprob = ODEProblem(hopf!, u0, tspan, p)
 sol = solve(odeprob, Tsit5())
 
 # Collocation problem
-n = 20  # number of collocation points
-t = range(0.0, 2π, length=n+1)[1:end-1]  # omit the last point
-u = Matrix(sol(t))
-prob = fourier_collocation(hopf!, u, tspan, p)
-
+prob = polynomial_collocation(hopf!, sol, tspan, p)
 ```
 """
-function fourier_collocation(f, u, tspan, p = (); t0 = 0, phase = true, eqns = missing)
-    fcprob = FourierCollocation(f, u, tspan, p; eqns, phase)
-    prob = ContinuationProblem(fcprob)
+function polynomial_collocation(f, u, tspan, p = (); t0 = 0, kwargs...)
+    coll_prob = PolynomialCollocation(f, u, tspan, p; kwargs...)
+    prob = ContinuationProblem(coll_prob)
     # Add continuation parameters (all inactive to start with)
     add_parameters!(prob, :p, keys(p))
     # Fix start time
@@ -189,7 +200,27 @@ function fourier_collocation(f, u, tspan, p = (); t0 = 0, phase = true, eqns = m
     return prob
 end
 
-@testitem "Fourier collocation" begin
+struct LimitCycle
+    u0::Any
+    vars::Int
+    eqns::Int
+end
+
+LimitCycle(coll::PolynomialCollocation) = LimitCycle((;), 0, coll.ndim)
+
+function (lc::LimitCycle)(res, u, data; kwargs...)
+    v = u.coll.zero.u
+    res .= v[1:lc.eqns] .- v[end-lc.eqns+1:end]
+    return res
+end
+
+function limit_cycle(f, u, tspan, p = (); kwargs...)
+    coll = polynomial_collocation(f, u, tspan, p; kwargs...)
+    lc = LimitCycle(coll.zero_function!)
+    return ContinuationProblem(lc; subprob=[:coll => coll])
+end
+
+@testitem "Polynomial collocation" begin
     using LinearAlgebra: norm
 
     function hopf!(res, u, p, t)
@@ -201,9 +232,9 @@ end
 
     # Define initial solution
     p0 = [1.0, -1.0]
-    t = range(0, 2π, length = 21)[1:(end - 1)]
+    t = range(0, 2π, length = 101)
     u0 = [sqrt(p0[1]) .* sin.(t) -sqrt(p0[1]) .* cos.(t)]'
-    prob = NumericalContinuation.fourier_collocation(hopf!, u0, (0, 2π), p0)
+    prob = NumericalContinuation.polynomial_collocation(hopf!, u0, (0, 2π), p0)
 
     # Problem set up
     (_u, data) = NumericalContinuation.get_initial(prob)
@@ -218,12 +249,12 @@ end
                         monitor = zeros(Float64, count(active)))
     monitor = ComponentVector{Float64}(_monitor)
     res = ComponentVector{Float64}(res_layout)
-    @test length(res) == length(u)
+    @test length(res) == length(u) - size(u0, 1)  # No boundary conditions to complete the problem
 
     # Optimised code
     func = NumericalContinuation.ContinuationFunction(prob)
 
     # Evaluate
     NumericalContinuation.eval_zero_function!(res, func, u, data, active, monitor)
-    @test norm(res) < 1e-12
+    @test norm(res) < 2e-4
 end

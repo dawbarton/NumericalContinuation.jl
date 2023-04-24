@@ -23,14 +23,14 @@ struct ContinuationProblem
 end
 
 """
-    ContinuationProblem(zero_function!; monitor, sub)
+    ContinuationProblem(zero_function!; [monitor], [subprob])
 
 Create a `ContinuationProblem` from a zero function, optionally adding in monitor functions
 and subproblems.
 """
-function ContinuationProblem(zero_function!; monitor = [], sub = [])
+function ContinuationProblem(zero_function!; monitor = [], subprob = [])
     prob = ContinuationProblem(zero_function!, [], Symbol[], [], Symbol[])
-    isempty(sub) || add_sub_problem!(prob, sub)
+    isempty(subprob) || add_sub_problem!(prob, subprob)
     isempty(monitor) || add_monitor_function!(prob, monitor)
     return prob
 end
@@ -237,15 +237,15 @@ get_initial(::ContinuationProblem, zero) = (zero.u0, ())  # default fallback for
 get_initial(::ContinuationProblem, monitor, name) = ()  # default fallback for monitor functions
 
 """
-    get_initial_residual(prob)
+    get_initial_residual_layout(prob)
 
-Return a (potentially nested) `NamedTuple` of zeros in the required shape for the residual.
+Return a (potentially nested) `NamedTuple` of zeros in the required shape for the residual
+excluding the monitor functions.
 """
 function get_initial_residual_layout(prob::ContinuationProblem)
     res = Any[name => get_initial_residual_layout(sub_prob)
               for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
     push!(res, :zero => falses(get_eqns(prob.zero_function!)))
-    push!(res, :monitor => falses(length(prob.monitor_function)))
     return NamedTuple(res)
 end
 
