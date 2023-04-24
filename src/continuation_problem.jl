@@ -239,14 +239,24 @@ get_initial(::ContinuationProblem, monitor, name) = ()  # default fallback for m
 """
     get_initial_residual_layout(prob)
 
-Return a (potentially nested) `NamedTuple` of zeros in the required shape for the residual
-excluding the monitor functions.
+Return a (potentially nested) `NamedTuple` of zeros in the required shape for the residual.
 """
 function get_initial_residual_layout(prob::ContinuationProblem)
-    res = Any[name => get_initial_residual_layout(sub_prob)
-              for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)]
+    (res, monitor) = _get_initial_residual_layout(prob)
+    return merge(res, (monitor = falses(monitor),))
+end
+
+function _get_initial_residual_layout(prob::ContinuationProblem)
+    res = []
+    monitor = 0
+    for (name, sub_prob) in zip(prob.sub_problem_name, prob.sub_problem)
+        (_res, _monitor) = _get_initial_residual_layout(sub_prob)
+        push!(res, name => _res)
+        monitor += _monitor
+    end
     push!(res, :zero => falses(get_eqns(prob.zero_function!)))
-    return NamedTuple(res)
+    monitor += length(prob.monitor_function)
+    return (NamedTuple(res), monitor)
 end
 
 """
