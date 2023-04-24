@@ -23,9 +23,9 @@ export solve, PseudoArclength
 include("continuation_problem.jl")
 include("continuation_function.jl")
 include("algebraic_problems.jl")
+include("polynomials.jl")
 include("boundary_value_problems.jl")
 include("covering.jl")
-include("polynomials.jl")
 
 export test_problem0
 
