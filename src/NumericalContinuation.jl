@@ -77,12 +77,11 @@ function duffing!(du, u, p, t)
     du[2] = p.Γ * sin(p.ω * t + p.ϕ) - p.ξ * u[2] - p.k * u[1] - p.k₃ * u[1]^3
 end
 
-function test_problem3()
-    t = range(0, 2π, length = 21)[1:(end - 1)]
+function test_problem3(; nmesh = 20)
     p0 = (Γ = 1.0, ω = 0.1, ϕ = π / 2, ξ = 0.05, k = 1.0, k₃ = 0.1)
-    u0 = collect([cos.(t) p0.ω .* .-sin.(t)]')
-    prob = NumericalContinuation.fourier_collocation(duffing!, u0, (0, 2π / p0.ω), p0;
-                                                     phase = false)
+    u0 = t -> [cos(t), -p0.ω*sin(t)]
+    prob = NumericalContinuation.limit_cycle(duffing!, u0, (0, 2π / p0.ω), p0;
+                                                     phase = false, nmesh)
     add_parameter!(prob, :period, u -> u.tspan[2] - 2π / u.p.ω; value = 0)
     add_parameter!(prob, :phase, @optic _.u[2]; value = 0)
     return prob

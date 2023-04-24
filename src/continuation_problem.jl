@@ -164,7 +164,7 @@ end
 Return the number of variables defined in a problem. Does not include monitor variables.
 """
 function get_vars(prob::ContinuationProblem)
-    return reduce(sum ∘ get_vars, prob.sub_problem; init = 0) +
+    return mapreduce(get_vars, +, prob.sub_problem; init = 0) +
            get_vars(prob.zero_function!)
 end
 
@@ -176,7 +176,7 @@ get_vars(zero) = zero.vars  # default fallback for zero functions
 Return the number of equations defined in a problem, including monitor functions.
 """
 function get_eqns(prob::ContinuationProblem)
-    return reduce(sum ∘ get_eqns, prob.sub_problem; init = 0) +
+    return mapreduce(get_eqns, +, prob.sub_problem; init = 0) +
            get_eqns(prob.zero_function!) +
            length(prob.monitor_function)
 end

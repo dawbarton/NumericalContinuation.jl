@@ -65,8 +65,7 @@ function PolynomialCollocation(f, u, tspan, p = (); phase::Bool = true,
         mesh_t = period / nmesh
         for i in Base.OneTo(nmesh)
             for j in Base.OneTo(ncoll)
-                @show _t = t[i] + repr_pts[j] * mesh_t
-                uu[:, (i - 1) * ncoll + j + 1] = u(_t)
+                uu[:, (i - 1) * ncoll + j + 1] = u(t[i] + repr_pts[j] * mesh_t)
             end
         end
         uu[:, end] = u(tspan[end])
