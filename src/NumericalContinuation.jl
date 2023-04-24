@@ -14,6 +14,7 @@ using NonlinearSolve: NonlinearSolve, NonlinearProblem, init, reinit!, solve!,
                       NewtonRaphson, TrustRegion, ReturnCode
 using PreallocationTools: DiffCache, get_tmp
 using FFTW: ifft!
+using QuadGK: quadgk, gauss
 
 const RESERVED_NAMES = Set([:zero, :monitor])
 
@@ -24,6 +25,7 @@ include("continuation_function.jl")
 include("algebraic_problems.jl")
 include("boundary_value_problems.jl")
 include("covering.jl")
+include("polynomials.jl")
 
 export test_problem0
 
