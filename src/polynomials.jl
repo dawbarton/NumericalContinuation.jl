@@ -72,10 +72,10 @@ function chebyshev_quadrature_weights(T, n::Integer)
     elseif n > 0
         c = Vector{Complex{T}}(undef, n + 1)
         w = Vector{T}(undef, n + 1)
-        for i in 1:n ÷ 2 + 1
+        for i in 1:(n ÷ 2 + 1)
             c[i] = T(2) / T(1 - (2 * (i - 1))^2)
         end
-        for i in n ÷ 2 + 2:n
+        for i in (n ÷ 2 + 2):n
             c[i] = c[n - i + 2]
         end
         ifft!(@view(c[1:n]))
@@ -97,12 +97,10 @@ Return an `OrthogonalPolynomial` representing the Chebyshev polynomial of the se
 with order `n`.
 """
 function chebyshev(T, n::Integer)
-    return OrthogonalPolynomial{T}(
-        chebyshev_nodes(T, n),
-        chebyshev_barycentric_weights(T, n),
-        chebyshev_quadrature_weights(T, n),
-        true
-    )
+    return OrthogonalPolynomial{T}(chebyshev_nodes(T, n),
+                                   chebyshev_barycentric_weights(T, n),
+                                   chebyshev_quadrature_weights(T, n),
+                                   true)
 end
 
 chebyshev(n::Integer) = chebyshev(Float64, n)
@@ -114,16 +112,16 @@ chebyshev(n::Integer) = chebyshev(Float64, n)
         cheb = NumericalContinuation.chebyshev(n)
         x0 = NumericalContinuation.nodes(cheb)
         y0 = testfcn.(x0)
-        x = range(-1, stop=1, length=101)
+        x = range(-1, stop = 1, length = 101)
         y = NumericalContinuation.interpolate(cheb, y0, x)
-        @test y ≈ testfcn.(x) atol=1e-3
+        @test y≈testfcn.(x) atol=1e-3
         In = NumericalContinuation.interpolation_matrix(cheb, x)
         @test In * y0 ≈ y
         D = NumericalContinuation.differentiation_matrix(cheb)
         dy0 = D * y0
-        @test dy0 ≈ dtestfcn.(x0) atol=1e-3
+        @test dy0≈dtestfcn.(x0) atol=1e-3
         int = NumericalContinuation.integrate(cheb, dtestfcn.(x0))
-        @test int ≈ testfcn(1) - testfcn(-1) atol=1e-4
+        @test int≈testfcn(1) - testfcn(-1) atol=1e-4
     end
 end
 
@@ -157,12 +155,10 @@ Return an `OrthogonalPolynomial` representing the a Lagrange polynomial with equ
 nodes of order `n`.
 """
 function equispaced(T, n::Integer)
-    return OrthogonalPolynomial{T}(
-        equispaced_nodes(T, n),
-        equispaced_barycentric_weights(T, n),
-        equispaced_quadrature_weights(T, n),
-        true
-    )
+    return OrthogonalPolynomial{T}(equispaced_nodes(T, n),
+                                   equispaced_barycentric_weights(T, n),
+                                   equispaced_quadrature_weights(T, n),
+                                   true)
 end
 
 equispaced(n::Integer) = equispaced(Float64, n)
@@ -176,16 +172,16 @@ const lagrange = equispaced
         equi = NumericalContinuation.equispaced(n)
         x0 = NumericalContinuation.nodes(equi)
         y0 = testfcn.(x0)
-        x = range(-1, stop=1, length=101)
+        x = range(-1, stop = 1, length = 101)
         y = NumericalContinuation.interpolate(equi, y0, x)
-        @test y ≈ testfcn.(x) atol=1e-1
+        @test y≈testfcn.(x) atol=1e-1
         In = NumericalContinuation.interpolation_matrix(equi, x)
         @test In * y0 ≈ y
         D = NumericalContinuation.differentiation_matrix(equi)
         dy0 = D * y0
-        @test dy0 ≈ dtestfcn.(x0) atol=5e-1
+        @test dy0≈dtestfcn.(x0) atol=5e-1
         int = NumericalContinuation.integrate(equi, dtestfcn.(x0))
-        @test int ≈ testfcn(1) - testfcn(-1) atol=1e-2
+        @test int≈testfcn(1) - testfcn(-1) atol=1e-2
     end
 end
 
@@ -196,7 +192,7 @@ Return an `OrthogonalPolynomial` representing the Legendre polynomials of order 
 """
 function legendre(T, n::Integer)
     (x, w) = gauss(T, n + 1)
-    l = T[(2*isodd(i)-1)*sqrt((1-x[i]^2)*w[i]) for i in eachindex(x)]
+    l = T[(2 * isodd(i) - 1) * sqrt((1 - x[i]^2) * w[i]) for i in eachindex(x)]
     return OrthogonalPolynomial{T}(x, l, w, false)
 end
 
@@ -209,16 +205,16 @@ legendre(n::Integer) = legendre(Float64, n)
         cheb = NumericalContinuation.legendre(n)
         x0 = NumericalContinuation.nodes(cheb)
         y0 = testfcn.(x0)
-        x = range(-1, stop=1, length=101)
+        x = range(-1, stop = 1, length = 101)
         y = NumericalContinuation.interpolate(cheb, y0, x)
-        @test y ≈ testfcn.(x) atol=1e-3
+        @test y≈testfcn.(x) atol=1e-3
         In = NumericalContinuation.interpolation_matrix(cheb, x)
         @test In * y0 ≈ y
         D = NumericalContinuation.differentiation_matrix(cheb)
         dy0 = D * y0
-        @test dy0 ≈ dtestfcn.(x0) atol=1e-2
+        @test dy0≈dtestfcn.(x0) atol=1e-2
         int = NumericalContinuation.integrate(cheb, dtestfcn.(x0))
-        @test int ≈ testfcn(1) - testfcn(-1) atol=1e-4
+        @test int≈testfcn(1) - testfcn(-1) atol=1e-4
     end
 end
 
