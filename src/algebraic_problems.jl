@@ -18,7 +18,7 @@ struct AlgebraicProblem
     end
 end
 
-(alg::AlgebraicProblem)(res, u, data; kwargs...) = alg.f(res, u.zero.u, u.zero.p)
+(alg::AlgebraicProblem)(res, u, data; kwargs...) = alg.f(res, u.u, u.p)
 
 function algebraic_problem(f, u, p = (;), eqns = missing)
     prob = ContinuationProblem(AlgebraicProblem(f, u, p, eqns))

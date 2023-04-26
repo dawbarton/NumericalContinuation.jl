@@ -224,11 +224,19 @@ function get_initial(prob::ContinuationProblem)
     end
     # Zero function
     (_u, _data) = get_initial(prob, prob.zero_function!)
-    push!(u, :zero => _u)
+    append!(u, pairs(_u))
     push!(data, :zero => _data)
     # Monitor functions
     for (name, monitor_function) in zip(prob.monitor_function_name, prob.monitor_function)
         push!(data, name => get_initial(prob, monitor_function, name))
+    end
+    # Check for duplicate names in u
+    for i in eachindex(u)
+        for j in i+1:lastindex(u)
+            if first(u[i]) == first(u[j])
+                throw(ArgumentError("Duplicate name in state vector: $(first(u[i]))"))
+            end
+        end
     end
     return (NamedTuple(u), NamedTuple(data))
 end
@@ -376,8 +384,7 @@ function add_parameter! end
 function add_parameter!(prob::ContinuationProblem, name::Symbol, lens; active = false,
                         value = nothing)
     add_monitor_function!(prob, name,
-                          monitor_function(lens ∘ (@optic _.zero); active = active,
-                                           value = value))
+                          monitor_function(lens; active = active, value = value))
 end
 
 function add_parameter!(prob::ContinuationProblem, name::Symbol, idx::Symbol; kwargs...)

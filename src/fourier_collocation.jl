@@ -71,8 +71,7 @@ struct FourierCollocation{F, T}
     end
 end
 
-function (fourier::FourierCollocation{F, TT})(res, uu, data; kwargs...) where {F, TT}
-    u = uu.zero
+function (fourier::FourierCollocation{F, TT})(res, u, data; kwargs...) where {F, TT}
     # TODO: work out if there are any allocations left in here
     # Calculate the right-hand side
     T = u.tspan[end] - u.tspan[begin]

@@ -82,8 +82,8 @@ function test_problem3(; nmesh = 20)
     u0 = t -> [cos(t), -p0.ω*sin(t)]
     prob = NumericalContinuation.limit_cycle(duffing!, u0, (0, 2π / p0.ω), p0;
                                                      phase = false, nmesh)
-    add_parameter!(prob, :period, u -> u.tspan[2] - 2π / u.p.ω; value = 0)
-    add_parameter!(prob, :phase, @optic _.u[2]; value = 0)
+    add_parameter!(prob, :period, u -> u.coll.tspan[2] - 2π / u.coll.p.ω; value = 0)
+    add_parameter!(prob, :phase, @optic _.coll.u[2]; value = 0)
     return prob
 end
 
