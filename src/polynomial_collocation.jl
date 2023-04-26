@@ -51,8 +51,8 @@ function PolynomialCollocation(f, u, tspan, p = (); phase::Bool = true,
     coll_poly = coll(T, ncoll - 1)
     coll_pts = (nodes(coll_poly) .+ 1) ./ 2
     In = collect(transpose(interpolation_matrix(repr_poly, nodes(coll_poly))))
-    Dt = collect(transpose(differentiation_matrix(coll_poly) .* 2))
-    InDt = In * Dt
+    Dt = collect(transpose(differentiation_matrix(repr_poly) .* 2))
+    InDt = Dt * In
     h = fill(one(T) / nmesh, nmesh)
 
     if u isa AbstractArray
@@ -89,17 +89,18 @@ function PolynomialCollocation(f, u, tspan, p = (); phase::Bool = true,
     u_tmp = DiffCache(Vector{T}(undef, ndim))
 
     return PolynomialCollocation{T, typeof(_f)}(_f,
-                                                (u = _u, p = p,
+                                                (u = (u0 = _u[1:ndim],
+                                                      u_mid = _u[ndim+1:end-ndim],
+                                                      u1 = _u[end-ndim+1:end]), p = p,
                                                  tspan = [tspan[begin], tspan[end]]),
                                                 _vars, _eqns, ndim, nmesh, ncoll, repr_poly,
                                                 coll_poly, repr_pts, coll_pts, In, Dt, InDt,
                                                 phase, u_tmp, h, phase_du)
 end
 
-function (coll::PolynomialCollocation{S})(res, uu, data; kwargs...) where {S}
-    u = uu.zero
+function (coll::PolynomialCollocation{S})(res, u, data; kwargs...) where {S}
     U = reshape(u.u, (coll.ndim, coll.nmesh * coll.ncoll + 1))
-    u_tmp = get_tmp(coll.u_tmp, u.u)
+    u_tmp = get_tmp(coll.u_tmp, u.u.u0)
     res_mat = reshape(@view(res[1:(coll.ndim * coll.nmesh * coll.ncoll)]),
                       (coll.ndim, coll.nmesh * coll.ncoll))
     T = u.tspan[end] - u.tspan[begin]
@@ -108,14 +109,18 @@ function (coll::PolynomialCollocation{S})(res, uu, data; kwargs...) where {S}
     i1 = coll.ncoll
     phase = zero(S)
     for i in Base.OneTo(coll.nmesh)
+        U_coll = @view(U[:, i0:(i1 + 1)])
         for j in Base.OneTo(coll.ncoll)
+            # Main.@infiltrate
             # interpolate to find u at the collocation point
-            @views mul!(u_tmp, U[:, i0:(i1 + 1)], coll.In[:, j])
+            @views mul!(u_tmp, U_coll, coll.In[:, j])
             # evaluate the function at the collocation point (multiplied by the period in the next step)
-            coll.f!(@view(res_mat[:, i0 + j - 1]), u_tmp, u.p, t0 + coll.repr_pts[j] * T)
+            @views coll.f!(res_mat[:, i0 + j - 1], u_tmp, u.p,
+                           t0 + coll.h[j] * coll.coll_pts[j] * T)
             # compute the time derivative of u at the collocation point and subtract from the residual
-            @views mul!(res_mat[:, i0 + j - 1], U[:, i0:(i1 + 1)], coll.InDt[:, j], -one(S),
-                        T * coll.h[j])
+            @views mul!(res_mat[:, i0 + j - 1], U_coll, coll.InDt[:, j],
+                        -one(S) / coll.h[j], T)
+            # phase condition
             for k in Base.OneTo(coll.ndim)
                 phase += coll.phase_du[k, i0 + j - 1] * u_tmp[k]
             end
@@ -208,8 +213,7 @@ end
 LimitCycle(coll::PolynomialCollocation) = LimitCycle((;), 0, coll.ndim)
 
 function (lc::LimitCycle)(res, u, data; kwargs...)
-    v = u.coll.zero.u
-    res .= v[1:lc.eqns] .- v[end-lc.eqns+1:end]
+    @views res .= u.coll.u.u1 .- u.coll.u.u0
     return res
 end
 
