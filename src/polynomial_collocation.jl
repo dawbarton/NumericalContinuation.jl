@@ -111,7 +111,6 @@ function (coll::PolynomialCollocation{S})(res, u, data; kwargs...) where {S}
     for i in Base.OneTo(coll.nmesh)
         U_coll = @view(U[:, i0:(i1 + 1)])
         for j in Base.OneTo(coll.ncoll)
-            # Main.@infiltrate
             # interpolate to find u at the collocation point
             @views mul!(u_tmp, U_coll, coll.In[:, j])
             # evaluate the function at the collocation point (multiplied by the period in the next step)
