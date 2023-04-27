@@ -1,17 +1,21 @@
+@enumx ChartStatus Undef Initial Predicted Corrected Failed Accepted Rejected Saved
+
 mutable struct Chart{T}
     const u::Vector{T}
     const ts::Vector{T}
     s::Int
     h::T
+    status::ChartStatus.T
 end
 
-Base.copy(chart::Chart) = Chart(copy(chart.u), copy(chart.ts), chart.s, chart.h)
+Base.copy(chart::Chart) = Chart(copy(chart.u), copy(chart.ts), chart.s, chart.h, chart.status)
 
 function copyto_chart!(dest::Chart, src::Chart)
     copyto!(dest.u, src.u)
     copyto!(dest.ts, src.ts)
     dest.s = src.s
     dest.h = src.h
+    dest.status = src.status
     return dest
 end
 
@@ -76,7 +80,7 @@ struct PseudoArclengthCache{T, F, S}
     maxsteps::Int
     secant::Bool
     chart_base::Chart{T}  # Corrected
-    chart_next::Chart{T}  # May not be corrected; TODO: is chart_next_status required?
+    chart_next::Chart{T}  # May not be Corrected
     atlas::Vector{Chart{T}}
     step::Base.RefValue{Int}
     force_stop::Base.RefValue{Bool}
@@ -104,8 +108,8 @@ function SciMLBase.init(prob::ContinuationProblem, alg::PseudoArclength,
     end
     # Add the pseudo-arclength condition
     n = get_eqns(pa_prob) + 1
-    chart_base = Chart(zeros(T, n), zeros(T, n), dir, h0)
-    chart_next = Chart(zeros(T, n), zeros(T, n), dir, h0)
+    chart_base = Chart(zeros(T, n), zeros(T, n), dir, h0, ChartStatus.Undef)
+    chart_next = Chart(zeros(T, n), zeros(T, n), dir, h0, ChartStatus.Undef)
     add_monitor_function!(pa_prob, :pseudoarclength,
                           monitor_function(PseudoArclengthFunc(chart_next); active = false,
                                            value = 0))
@@ -126,6 +130,7 @@ function SciMLBase.init(prob::ContinuationProblem, alg::PseudoArclength,
         # No parameters, so use the final unknown
         chart_next.ts[end] = one(T)
     end
+    chart_next.status = ChartStatus.Initial
     # Construct the nonlinear solver
     nl_solver = init(NonlinearProblem{true}(f, u0, p0), alg.nl_solver)
     return PseudoArclengthCache{T, typeof(f), typeof(nl_solver)}(pa_prob, f, nl_solver,
@@ -158,6 +163,7 @@ function initial_correct!(cache::PseudoArclengthCache)
     sol = solve!(nl_solver)
     if sol.retcode != ReturnCode.Success
         @debug "Failed to converge on initial correction"
+        chart_next.status = ChartStatus.Failed
         cache.force_stop[] = true
     else
         chart_next.u .= sol.u
@@ -166,6 +172,7 @@ function initial_correct!(cache::PseudoArclengthCache)
         if chart_next.ts[end] < 0
             chart_next.ts .= .-chart_next.ts
         end
+        chart_next.status = ChartStatus.Accepted
         # Save successful chart as the new base
         copyto_chart!(chart_base, chart_next)
     end
@@ -175,11 +182,12 @@ end
 function predict!(cache::PseudoArclengthCache)
     (; chart_base, chart_next, h_min) = cache
     if chart_next.h < h_min
-        cache.force_stop = true
+        cache.force_stop[] = true
         return
     end
     # Linear predicter
     chart_next.u .= chart_base.u .+ chart_next.s .* chart_next.h .* chart_base.ts
+    chart_next.status = ChartStatus.Predicted
     return
 end
 
@@ -206,6 +214,7 @@ function correct!(cache::PseudoArclengthCache)
         @debug "Failed to converge; retrying with smaller stepsize" i
         # Failed to converge, try again with smaller stepsize
         chart_next.h *= h_shrink
+        chart_next.status = ChartStatus.Failed
     else
         chart_next.u .= sol.u
         # Calculate tangent space
@@ -222,16 +231,20 @@ function correct!(cache::PseudoArclengthCache)
             chart_next.ts .= .-chart_next.ts
             alpha = -alpha
         end
+        chart_next.status = ChartStatus.Corrected
         if alpha < alpha_max
             # Angle was too high - shrink stepsize and retry
             @debug "Angle between consecutive tangent spaces too large on step; retrying with smaller stepsize" i angle=acosd(alpha)
             chart_next.h *= h_shrink
+            chart_next.status = ChartStatus.Rejected
         else
+            chart_next.status = ChartStatus.Accepted
             # Save successful chart as the new base
             copyto_chart!(chart_base, chart_next)
             # If angle is small (alpha ≈ 1), increase stepsize up to h_max; otherwise leave untouched
             chart_next.h = alpha > (alpha_max + 1) / 2 ?
                            min(chart_next.h * h_grow, h_max) : chart_next.h
+            chart_next.status = ChartStatus.Initial
         end
     end
     return
@@ -240,6 +253,9 @@ end
 function save_chart!(cache::PseudoArclengthCache)
     (; chart_base, atlas) = cache
     # Update atlas
-    push!(atlas, copy(chart_base))
+    if chart_base.status == ChartStatus.Accepted
+        push!(atlas, copy(chart_base))
+        chart_base.status = ChartStatus.Saved
+    end
     return
 end

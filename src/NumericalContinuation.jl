@@ -15,6 +15,7 @@ using NonlinearSolve: NonlinearSolve, NonlinearProblem, init, reinit!, solve!,
 using PreallocationTools: DiffCache, get_tmp
 using FFTW: ifft!
 using QuadGK: quadgk, gauss
+using EnumX: @enumx
 
 const RESERVED_NAMES = Set([:zero, :monitor])
 
