@@ -78,10 +78,10 @@ function duffing!(du, u, p, t)
 end
 
 function test_problem3(; nmesh = 20)
-    p0 = (Γ = 1.0, ω = 0.1, ϕ = π / 2, ξ = 0.05, k = 1.0, k₃ = 0.1)
-    u0 = t -> [cos(t), -p0.ω*sin(t)]
+    p0 = (Γ = 1.0, ω = 0.1, ϕ = 0, ξ = 0.05, k = 1.0, k₃ = 0.1)
+    u0 = t -> [cos(t), -p0.ω * sin(t)]
     prob = NumericalContinuation.limit_cycle(duffing!, u0, (0, 2π / p0.ω), p0;
-                                                     phase = false, nmesh)
+                                             phase = false, nmesh)
     add_parameter!(prob, :period, u -> u.coll.tspan[2] - 2π / u.coll.p.ω; value = 0)
     add_parameter!(prob, :phase, @optic _.coll.u[2]; value = 0)
     return prob

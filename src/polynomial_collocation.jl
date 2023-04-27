@@ -90,8 +90,8 @@ function PolynomialCollocation(f, u, tspan, p = (); phase::Bool = true,
 
     return PolynomialCollocation{T, typeof(_f)}(_f,
                                                 (u = (u0 = _u[1:ndim],
-                                                      u_mid = _u[ndim+1:end-ndim],
-                                                      u1 = _u[end-ndim+1:end]), p = p,
+                                                      u_mid = _u[(ndim + 1):(end - ndim)],
+                                                      u1 = _u[(end - ndim + 1):end]), p = p,
                                                  tspan = [tspan[begin], tspan[end]]),
                                                 _vars, _eqns, ndim, nmesh, ncoll, repr_poly,
                                                 coll_poly, repr_pts, coll_pts, In, Dt, InDt,
@@ -139,10 +139,10 @@ end
                            [phase = true], [t0 = 0], [ncol = 4], [nmesh],
                            [repr = equispaced], [coll = legendre])
 
-Implement an orthogonal polynomial-based collocation scheme for discretising a periodic
-orbit. The vector field `f` is assumed to be of the same form as used in the SciML/DiffEq
-ecosystem, i.e., `f(u, p, t)`, where `u` is the state vector, `p` are the (continuation)
-parameters, and `t` is time.
+Implement an orthogonal polynomial-based collocation scheme for discretising an ODE boundary
+value problem. The vector field `f` is assumed to be of the same form as used in the
+SciML/DiffEq ecosystem, i.e., `f(u, p, t)`, where `u` is the state vector, `p` are the
+(continuation) parameters, and `t` is time.
 
 The time interval is discretised into `nmesh` intervals, each of which is represented by a
 polynomial of order `ncoll`.
@@ -166,30 +166,7 @@ value consistent with the problem, or removed entirely by setting `t0 = nothing`
 
 The representation points are by default equispaced
 
-# Example
-
-Construct an initial solution using a simulation using OrdinaryDiffEq.
-
-```
-using OrdinaryDiffEq
-
-function hopf!(res, u, p, t)
-    ss = u[1]^2 + u[2]^2
-    res[1] = p[1] * u[1] - u[2] + p[2] * u[1] * ss
-    res[2] = u[1] + p[1] * u[2] + p[2] * u[2] * ss
-    return res
-end
-
-# Starting point on the limit cycle with period 2π
-u0 = [1.0, 0.0]
-tspan = (0.0, 2π)
-p = [1.0, -1.0]
-odeprob = ODEProblem(hopf!, u0, tspan, p)
-sol = solve(odeprob, Tsit5())
-
-# Collocation problem
-prob = polynomial_collocation(hopf!, sol, tspan, p)
-```
+See also: [`limit_cycle`](@ref).
 """
 function polynomial_collocation(f, u, tspan, p = (); t0 = 0, kwargs...)
     coll_prob = PolynomialCollocation(f, u, tspan, p; kwargs...)
@@ -216,10 +193,42 @@ function (lc::LimitCycle)(res, u, data; kwargs...)
     return res
 end
 
+"""
+    limit_cycle(f, u, tspan, [p]; [kwargs...])
+
+Construct a problem for finding a limit cycle of the ODE `f` using a collocation scheme.
+Internally, this constructs a [`polynomial_collocation`](@ref) problem and adds periodic
+boundary conditions.
+
+# Example
+
+Construct an initial solution using a simulation using OrdinaryDiffEq.
+
+```
+using OrdinaryDiffEq
+
+function hopf!(res, u, p, t)
+    ss = u[1]^2 + u[2]^2
+    res[1] = p[1] * u[1] - u[2] + p[2] * u[1] * ss
+    res[2] = u[1] + p[1] * u[2] + p[2] * u[2] * ss
+    return res
+end
+
+# Starting point on the limit cycle with period 2π
+u0 = [1.0, 0.0]
+tspan = (0.0, 2π)
+p = [1.0, -1.0]
+odeprob = ODEProblem(hopf!, u0, tspan, p)
+sol = solve(odeprob, Tsit5())
+
+# Collocation problem
+prob = polynomial_collocation(hopf!, sol, tspan, p)
+```
+"""
 function limit_cycle(f, u, tspan, p = (); kwargs...)
     coll = polynomial_collocation(f, u, tspan, p; kwargs...)
     lc = LimitCycle(coll.zero_function!)
-    return ContinuationProblem(lc; subprob=[:coll => coll])
+    return ContinuationProblem(lc; subprob = [:coll => coll])
 end
 
 @testitem "Polynomial collocation" begin

@@ -232,7 +232,7 @@ function get_initial(prob::ContinuationProblem)
     end
     # Check for duplicate names in u
     for i in eachindex(u)
-        for j in i+1:lastindex(u)
+        for j in (i + 1):lastindex(u)
             if first(u[i]) == first(u[j])
                 throw(ArgumentError("Duplicate name in state vector: $(first(u[i]))"))
             end

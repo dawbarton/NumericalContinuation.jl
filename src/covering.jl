@@ -37,6 +37,7 @@ struct PseudoArclength{T, S}
     h_grow::T
     h_shrink::T
     alpha_max::T
+    secant::Bool
     maxiters::Int
     abstol::T
     nl_solver::S
@@ -51,13 +52,14 @@ function PseudoArclength(;
                          alpha_max::Real = 99 // 100,
                          maxiters::Integer = 1000,
                          abstol::Real = 1 // 1_000_000,
+                         secant::Bool = false,
                          nl_solver = NewtonRaphson())
     _h0, _h_min, _h_max, _h_grow, _h_shrink, _alpha_max, _abstol = promote(h0, h_min, h_max,
                                                                            h_grow, h_shrink,
                                                                            alpha_max,
                                                                            abstol)
     PseudoArclength{typeof(_h0), typeof(nl_solver)}(_h0, _h_min, _h_max, _h_grow, _h_shrink,
-                                                    _alpha_max, maxiters, _abstol,
+                                                    _alpha_max, secant, maxiters, _abstol,
                                                     nl_solver)
 end
 
@@ -72,11 +74,13 @@ struct PseudoArclengthCache{T, F, S}
     h_shrink::T
     alpha_max::T
     maxsteps::Int
+    secant::Bool
     chart_base::Chart{T}  # Corrected
     chart_next::Chart{T}  # May not be corrected; TODO: is chart_next_status required?
     atlas::Vector{Chart{T}}
     step::Base.RefValue{Int}
     force_stop::Base.RefValue{Bool}
+    J_tmp::Matrix{T}
 end
 
 function SciMLBase.init(prob::ContinuationProblem, alg::PseudoArclength,
@@ -127,9 +131,11 @@ function SciMLBase.init(prob::ContinuationProblem, alg::PseudoArclength,
     return PseudoArclengthCache{T, typeof(f), typeof(nl_solver)}(pa_prob, f, nl_solver,
                                                                  h0, h_min, h_max, h_grow,
                                                                  h_shrink, alpha_max,
-                                                                 maxsteps, chart_base,
-                                                                 chart_next, Chart{T}[],
-                                                                 Ref(0), Ref(false))
+                                                                 maxsteps, alg.secant,
+                                                                 chart_base, chart_next,
+                                                                 Chart{T}[], Ref(0),
+                                                                 Ref(false),
+                                                                 Matrix{T}(undef, n, n))
 end
 
 function SciMLBase.solve!(cache::PseudoArclengthCache)
@@ -146,7 +152,7 @@ function SciMLBase.solve!(cache::PseudoArclengthCache)
 end
 
 function initial_correct!(cache::PseudoArclengthCache)
-    (; nl_solver, chart_base, chart_next) = cache
+    (; nl_solver, chart_base, chart_next, J_tmp) = cache
     # Initial correction
     reinit!(nl_solver, chart_next.u)
     sol = solve!(nl_solver)
@@ -156,7 +162,7 @@ function initial_correct!(cache::PseudoArclengthCache)
     else
         chart_next.u .= sol.u
         # Calculate tangent space
-        tangent_space!(chart_next.ts, nl_solver)
+        tangent_space!(chart_next.ts, nl_solver, J_tmp)
         if chart_next.ts[end] < 0
             chart_next.ts .= .-chart_next.ts
         end
@@ -177,19 +183,21 @@ function predict!(cache::PseudoArclengthCache)
     return
 end
 
-function tangent_space!(ts, nl_solver)
+function tangent_space!(ts, nl_solver, J_tmp)
     NonlinearSolve.jacobian!(nl_solver.J, nl_solver)
     for i in axes(nl_solver.J, 2)
         nl_solver.J[end, i] = 0  # zero out the pseudo-arclength condition
     end
+    # Copy transpose as avoids generic QR and uses specialised LAPACK routine instead
+    J_tmp .= transpose(nl_solver.J)
     # TODO: could replace this with geqrt! from FastLapackInterface with a preallocated workspace
-    null = qr!(nl_solver.J')
+    null = qr!(J_tmp)
     ts .= null.Q[:, end]
     return ts
 end
 
 function correct!(cache::PseudoArclengthCache)
-    (; nl_solver, chart_base, chart_next, alpha_max, h_grow, h_shrink, h_max) = cache
+    (; nl_solver, chart_base, chart_next, alpha_max, h_grow, h_shrink, h_max, J_tmp, secant) = cache
     # Correct
     reinit!(nl_solver, chart_next.u)
     sol = solve!(nl_solver)
@@ -201,7 +209,12 @@ function correct!(cache::PseudoArclengthCache)
     else
         chart_next.u .= sol.u
         # Calculate tangent space
-        tangent_space!(chart_next.ts, nl_solver)
+        if secant
+            chart_next.ts .= chart_next.u .- chart_base.u
+            chart_next.ts ./= norm(chart_next.ts)
+        else
+            tangent_space!(chart_next.ts, nl_solver, J_tmp)
+        end
         # Check that the angle between consecutive tangent spaces is sufficiently small
         alpha = dot(chart_base.ts, chart_next.ts)
         if alpha < 0
